@@ -1,0 +1,804 @@
+:root {
+  /* Dark theme: near-black navy field, panels a step lighter,
+     primary text near-white, secondary text held at #A7ABB5,
+     and the house gold — brightened one step so it keeps its
+     contrast as text and accent on the dark field. */
+  color-scheme: dark;
+  --ink: #ECECF1;
+  --ink2: #A7ABB5;
+  --gold: #D9A62E;
+  --goldink: #171106;
+  --goldtint: #2C2716;
+  --paper: #0B0E14;
+  --card: #161A24;
+  --line: #262C3B;
+  --bot: #1C212E;
+  --err: #E0655F;
+  --fieldline: #454E63;
+  --headh: 54px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  background: var(--paper);
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+a { color: var(--gold); }
+
+/* Simple animated background: three soft glows drifting very
+   slowly behind everything — gold and one cool slate tone at low
+   opacity on the dark field. Enhancement only — frozen solid
+   under prefers-reduced-motion, and content never depends on it. */
+.bgfx {
+  position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none;
+  background: linear-gradient(180deg, #0C0F16 0%, #0A0D13 55%, #080A0F 100%);
+}
+.blob { position: absolute; border-radius: 50%; filter: blur(70px); opacity: 0.5; will-change: transform; }
+.blob.b1 {
+  width: 55vmax; height: 55vmax; left: -18vmax; top: -22vmax;
+  background: radial-gradient(circle at 35% 35%, rgba(217, 166, 46, 0.5), rgba(217, 166, 46, 0) 70%);
+  animation: drift1 52s ease-in-out infinite alternate;
+}
+.blob.b2 {
+  width: 48vmax; height: 48vmax; right: -16vmax; top: 24vh;
+  background: radial-gradient(circle at 60% 40%, rgba(88, 120, 200, 0.42), rgba(88, 120, 200, 0) 70%);
+  animation: drift2 64s ease-in-out infinite alternate;
+}
+.blob.b3 {
+  width: 40vmax; height: 40vmax; left: 22vw; bottom: -24vmax;
+  background: radial-gradient(circle at 50% 50%, rgba(217, 166, 46, 0.3), rgba(217, 166, 46, 0) 72%);
+  animation: drift3 76s ease-in-out infinite alternate;
+}
+@keyframes drift1 { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(6vmax, 4vmax, 0) scale(1.08); } }
+@keyframes drift2 { from { transform: translate3d(0, 0, 0) scale(1.05); } to { transform: translate3d(-5vmax, 5vmax, 0) scale(0.97); } }
+@keyframes drift3 { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-4vmax, -5vmax, 0) scale(1.1); } }
+
+[data-px] { will-change: transform; }
+
+.sitehead {
+  display: flex; justify-content: space-between; align-items: center;
+  height: var(--headh); padding: 0 18px; border-bottom: 1px solid var(--line);
+  background: rgba(11, 14, 20, 0.85); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  position: sticky; top: 0; z-index: 5;
+}
+.brand { font-size: 20px; font-weight: bold; text-decoration: none; color: var(--ink); white-space: nowrap; }
+.brand span { color: var(--gold); }
+.sitehead nav { display: flex; align-items: center; overflow-x: auto; scrollbar-width: none; }
+.sitehead nav::-webkit-scrollbar { display: none; }
+.sitehead nav a { margin-left: 16px; text-decoration: none; font-size: 15px; white-space: nowrap; }
+
+main { max-width: 860px; margin: 0 auto; padding: 20px 16px 40px; position: relative; }
+
+.sitefoot {
+  border-top: 1px solid var(--line); padding: 18px; max-width: 860px; margin: 0 auto;
+  font-size: 13px; color: var(--ink2);
+}
+
+/* Buttons — with a material-style ripple (ink span injected by
+   components/Fx.tsx on pointerdown; decorative only). */
+.btn {
+  display: inline-block; border: 1px solid var(--fieldline); background: var(--card);
+  color: var(--ink); padding: 9px 16px; border-radius: 10px; font-size: 15px;
+  font-family: inherit; cursor: pointer; text-decoration: none; margin: 4px 4px 4px 0;
+  position: relative; overflow: hidden; -webkit-tap-highlight-color: transparent;
+}
+.btn.primary { background: var(--gold); color: var(--goldink); border-color: var(--gold); font-weight: bold; }
+.btn.big { font-size: 17px; padding: 13px 22px; }
+.btn.small { padding: 5px 10px; font-size: 13px; }
+.btn.ghost { background: rgba(236, 236, 241, 0.05); border-color: var(--fieldline); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.ripple-ink {
+  position: absolute; border-radius: 50%; background: currentColor; opacity: 0.22;
+  transform: scale(0); pointer-events: none; animation: ripple 0.6s ease-out forwards;
+}
+@keyframes ripple { to { transform: scale(1); opacity: 0; } }
+
+.fineprint { font-size: 13px; color: var(--ink2); }
+.error { color: var(--err); font-weight: bold; }
+.warn { background: var(--goldtint); border: 1px solid var(--gold); border-radius: 8px; padding: 10px 12px; }
+
+/* Homepage */
+.hero2 { padding: 22px 0 4px; }
+.hero-card {
+  background: rgba(22, 26, 36, 0.78); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line); border-radius: 16px;
+  padding: 30px 26px 24px; text-align: center; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+.eyebrow {
+  letter-spacing: 0.12em; text-transform: uppercase; font-size: 12.5px;
+  color: var(--gold); font-weight: bold; margin: 0 0 10px;
+}
+.hero-card h1 { font-size: 34px; line-height: 1.2; margin: 0 0 14px; }
+.lede { font-size: 18px; color: var(--ink2); max-width: 640px; margin: 0 auto 12px; }
+.price { font-size: 17px; }
+.hero-links { margin: 12px 0 2px; font-size: 15px; }
+
+.how2 { margin-top: 30px; }
+.steps2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.step2 { background: rgba(22, 26, 36, 0.66); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.step2 p { margin: 6px 0 0; font-size: 14.5px; color: var(--ink2); }
+.stepnum {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%; background: var(--gold); color: var(--goldink);
+  font-size: 14px; font-weight: bold; margin-right: 8px; vertical-align: 2px;
+}
+
+.popular2 { margin-top: 30px; }
+.poprow { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.popchip {
+  border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+  padding: 8px 14px; text-decoration: none; color: var(--ink); font-size: 14.5px;
+  position: relative; overflow: hidden;
+}
+.honest2 { margin-top: 30px; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin: 14px 0; }
+.card {
+  display: flex; flex-direction: column; gap: 6px; background: var(--card);
+  border: 1px solid var(--line); border-radius: 10px; padding: 14px;
+  text-decoration: none; color: var(--ink);
+}
+.card span { font-size: 14px; color: var(--ink2); }
+.card .prose-note { font-size: 12.5px; font-style: italic; }
+
+/* Inputs that are not boxes: a label above, one bottom line, and
+   an accent line that grows along it on focus. Applies to the
+   chat composer and every .field on the site. */
+.field input, .field select, .field textarea,
+.composerrow input, .composerrow textarea {
+  font-family: inherit; font-size: 16px; color: var(--ink);
+  padding: 9px 2px; border: none; border-bottom: 1px solid var(--fieldline);
+  border-radius: 0; background-color: transparent;
+  background-image: linear-gradient(var(--gold), var(--gold));
+  background-repeat: no-repeat; background-position: 0 100%; background-size: 0% 2px;
+  transition: background-size 0.25s ease;
+}
+.field input, .field select, .field textarea { width: 100%; }
+.composerrow input, .composerrow textarea { flex: 1 1 auto; min-width: 0; }
+.field input:focus, .field select:focus, .field textarea:focus,
+.composerrow input:focus, .composerrow textarea:focus {
+  outline: none; background-size: 100% 2px;
+}
+::placeholder { color: #848B99; opacity: 1; }
+
+/* Interview — a full-height chat: the thread scrolls above a
+   composer dock fixed to the bottom of the screen. */
+.interviewpage {
+  display: flex; flex-direction: column;
+  margin: -20px -16px -40px;
+  height: calc(100vh - var(--headh));
+  height: calc(100dvh - var(--headh));
+}
+.chatbar { padding: 12px 18px 6px; flex: none; }
+.chatbar h1 { font-size: 20px; margin: 0 0 2px; }
+.chatbar .fineprint { margin: 0; }
+
+.chatshell { flex: 1; min-height: 0; display: flex; flex-direction: column; background: rgba(11, 14, 20, 0.55); }
+.chatlog {
+  flex: 1; min-height: 0; overflow-y: auto; width: 100%; max-width: 860px; margin: 0 auto;
+  padding: 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.msg { max-width: 85%; font-size: 15.5px; white-space: pre-wrap; }
+.msg.bot { align-self: flex-start; padding: 2px; max-width: 94%; }
+.msg.user {
+  background: var(--goldtint); color: #F3EDDA; align-self: flex-end;
+  border: 1px solid rgba(217, 166, 46, 0.38);
+  padding: 10px 13px; border-radius: 12px; border-bottom-right-radius: 3px;
+}
+
+.chatdock {
+  flex: none; border-top: 1px solid var(--line);
+  background: rgba(11, 14, 20, 0.92); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+}
+.chatdock .composer, .chatdock .badgerow { max-width: 860px; margin: 0 auto; }
+.composer .progress { margin: 0 0 6px; font-size: 13px; color: var(--ink2); }
+.composerrow { display: flex; gap: 10px; align-items: flex-end; }
+.composerrow .btn { margin: 0 0 2px; flex: none; }
+
+/* Quick answers: one line of badges, sideways scroll, no wrap. */
+.badgerow {
+  display: flex; gap: 8px; overflow-x: auto; flex-wrap: nowrap;
+  padding: 2px 0 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.badgerow::-webkit-scrollbar { display: none; }
+.badge {
+  flex: none; font-family: inherit; font-size: 14.5px; padding: 8px 15px;
+  border-radius: 999px; border: 1px solid var(--fieldline); background: var(--card);
+  color: var(--ink); cursor: pointer; position: relative; overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+.badge.primary { background: var(--gold); border-color: var(--gold); color: var(--goldink); font-weight: bold; }
+
+.choices { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.choices.wrap { margin-bottom: 8px; }
+
+.picklist h4 { margin: 14px 0 6px; }
+.pickitem {
+  display: block; width: 100%; text-align: left; background: var(--card); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; margin-bottom: 6px;
+  font-family: inherit; cursor: pointer; position: relative; overflow: hidden;
+}
+.pickitem span { display: block; font-size: 13.5px; color: var(--ink2); }
+
+.sigwrap { margin: 8px 0; }
+/* The signature pad stays paper-light ON PURPOSE: it is the one
+   surface that mimics the paper copy, and the dark ink drawn on it
+   is embedded exactly as drawn into the black-on-white PDF — a
+   dark pad would need light ink, which would vanish on the page. */
+.sigpad {
+  width: 100%; border: 2px dashed #7A611F; border-radius: 10px;
+  background: #fffdf5; touch-action: none; cursor: crosshair;
+}
+.sigrow { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+.sighint { font-size: 13px; color: var(--ink2); }
+.sigblock { display: flex; flex-direction: column; gap: 8px; }
+
+.paycard { border: 2px solid var(--gold); border-radius: 12px; padding: 16px; background: var(--card); }
+.paycard h4 { margin: 0 0 8px; }
+
+.filing { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: var(--card); }
+.filing li { margin-bottom: 12px; }
+.filing li p { margin: 0 0 4px; }
+.steplinks a { margin-right: 14px; font-size: 14px; }
+
+/* Done-screen court contact card (courts database record). */
+.courtcard {
+  border: 1px solid var(--gold); border-radius: 12px; padding: 14px 16px;
+  background: var(--card); margin-top: 14px;
+}
+.courtcard h4 { margin: 0 0 6px; }
+.courtcard p { margin: 0 0 5px; font-size: 14.5px; line-height: 1.45; }
+
+/* Accounts */
+.accountpage h1 { margin-bottom: 4px; }
+.acctcard {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  padding: 18px; margin: 14px 0;
+}
+.acctcard h3 { margin-top: 0; }
+.accttabs { display: flex; gap: 6px; margin-bottom: 12px; }
+
+.formgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin: 10px 0; }
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field.full { grid-column: 1 / -1; }
+.field label { font-size: 13.5px; color: var(--ink2); }
+
+.checkrow { display: flex; gap: 8px; align-items: center; font-size: 14.5px; margin: 10px 0; cursor: pointer; }
+.checkrow input { width: 17px; height: 17px; flex: none; }
+
+/* Interview account gate + subject cards */
+.gatecard, .subjectcard {
+  border: 2px solid var(--gold); border-radius: 12px; padding: 16px; background: var(--card);
+}
+.gatecard h4, .subjectcard h4 { margin: 0 0 8px; }
+.gatecard p { margin: 0 0 10px; }
+
+/* Motion library: search + collapsible categories */
+.libsearch { max-width: 520px; margin: 16px 0 8px; }
+.libcat { border-top: 1px solid var(--line); }
+.libcat-head {
+  width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  background: none; border: none; padding: 14px 4px; font-family: inherit;
+  font-size: 19px; font-weight: bold; color: var(--ink); cursor: pointer; text-align: left;
+  position: relative; overflow: hidden;
+}
+.libcat-meta { font-size: 13.5px; color: var(--ink2); font-weight: normal; display: inline-flex; gap: 8px; align-items: center; flex: none; }
+.chev { display: inline-block; transition: transform 0.2s ease; }
+.chev.open { transform: rotate(180deg); }
+.libmotions { padding-bottom: 10px; }
+.libmotion { border: 1px solid var(--line); border-radius: 10px; background: var(--card); margin-bottom: 8px; overflow: hidden; }
+.libmotion-head {
+  width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  background: none; border: none; padding: 12px 14px; font-family: inherit;
+  font-size: 16px; cursor: pointer; text-align: left; color: var(--ink);
+}
+.libmotion-body { padding: 2px 14px 14px; border-top: 1px solid var(--line); }
+.libmotion-body .prose-note { font-size: 12.5px; font-style: italic; color: var(--ink2); }
+
+/* Dashboard */
+.dashnav {
+  display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 0 4px;
+  border-bottom: 1px solid var(--line); margin-bottom: 14px;
+}
+.dashnav a {
+  text-decoration: none; font-size: 14.5px; padding: 6px 11px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--card);
+  color: var(--ink);
+}
+.dashsection { margin: 26px 0; }
+.dashsection h2 { margin-bottom: 8px; }
+.statuspill {
+  align-self: flex-start; font-size: 12.5px; font-weight: bold;
+  background: var(--bot); border-radius: 999px; padding: 2px 10px;
+}
+.statuspill.draft { background: var(--goldtint); border: 1px solid var(--gold); }
+.draftbanner {
+  background: var(--goldtint); border: 1px solid var(--gold); border-radius: 8px;
+  padding: 12px 14px; margin: 12px 0;
+}
+.draftbanner p { margin: 0 0 8px; }
+.draftbanner p:last-child { margin-bottom: 0; }
+.savednote {
+  background: var(--bot); border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 12px;
+}
+.field.inlinefield { max-width: 320px; margin: 8px 0 4px; }
+.block { display: block; }
+
+.doclist, .commlist, .watchlist, .deadlinelist, .chargelist, .portallist { list-style: none; margin: 0; padding: 0; }
+.docitem, .deadlineitem, .commitem, .watchitem {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; margin-bottom: 8px;
+}
+.docitem { justify-content: space-between; align-items: center; }
+.deadlineitem.done { opacity: 0.55; }
+.deadlineitem.done strong { text-decoration: line-through; }
+.deadlineitem input[type="checkbox"] { width: 18px; height: 18px; margin-top: 3px; flex: none; }
+.duedate { font-weight: bold; white-space: nowrap; }
+.dirbadge {
+  flex: none; font-size: 12px; font-weight: bold; border-radius: 999px;
+  padding: 2px 9px; background: var(--bot); margin-top: 2px;
+}
+.dirbadge.to_court { background: #1E2C44; }
+.dirbadge.from_court { background: var(--goldtint); }
+.commbody { display: block; margin-top: 4px; font-size: 14px; color: var(--ink2); white-space: pre-wrap; }
+
+/* The comm-draft editor is a writing surface, not a field — it
+   keeps its box. */
+.draftarea {
+  width: 100%; font-family: Georgia, 'Times New Roman', serif; font-size: 15px;
+  padding: 11px; border: 1px solid var(--fieldline); border-radius: 8px; background: var(--card);
+  color: var(--ink); margin: 10px 0;
+}
+
+/* Charges */
+.chargeitem { border: 1px solid var(--line); border-radius: 10px; background: var(--card); margin-bottom: 8px; overflow: hidden; }
+.chargetitle {
+  width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  background: none; border: none; padding: 12px 14px; font-family: inherit;
+  font-size: 16px; cursor: pointer; text-align: left; color: var(--ink);
+}
+.chargebody { padding: 0 14px 12px; border-top: 1px solid var(--line); }
+
+/* Portals */
+.portalitem { border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 12px 14px; margin-bottom: 8px; }
+.portalitem p { margin: 6px 0; }
+
+/* Simulated hearing */
+.progress { font-size: 13.5px; color: var(--ink2); }
+
+/* Voice layer — the interview voice-call bar, the composer's mic
+   button, and the practice page's voice control. Plain presentation:
+   nothing here changes layout when voice is off. */
+.voicebar {
+  flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 16px; border-bottom: 1px solid var(--line);
+  background: rgba(11, 14, 20, 0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.voicebar .btn, .voicectl .btn { margin: 0; }
+.vstatus { font-size: 13.5px; color: var(--ink2); }
+.voicenote { flex-basis: 100%; margin: 0; font-size: 13.5px; color: var(--ink2); }
+.micbtn.listening { background: #b3261e; border-color: #b3261e; color: #fff; }
+.voicectl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 14px; }
+.simq { background: var(--bot); border-radius: 12px; padding: 14px 16px; margin: 10px 0; }
+.simquestion { font-size: 21px; margin: 4px 0 0; }
+.coachcard {
+  border: 2px solid var(--gold); border-radius: 12px; padding: 14px 16px;
+  background: var(--card); margin: 12px 0;
+}
+
+/* Hearing companion */
+.livewarn h2 { margin-top: 0; font-size: 19px; }
+.livecontrols { display: flex; gap: 12px; align-items: center; margin: 16px 0; }
+.stopbtn { background: var(--err); color: #fff; border-color: var(--err); }
+.livelabel { font-weight: bold; color: var(--err); font-size: 17px; }
+.transcript {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card);
+  padding: 16px; min-height: 120px; font-size: 19px; line-height: 1.6;
+}
+.transcript .interim { color: var(--ink2); }
+.bigcard { font-size: 17px; }
+.bigcard .cardtitle { font-size: 21px; font-weight: bold; margin: 0 0 4px; }
+.srhead { font-size: 20px; }
+
+@media (max-width: 560px) {
+  .hero-card { padding: 22px 16px 18px; }
+  .hero-card h1 { font-size: 27px; }
+  .chatbar h1 { font-size: 18px; }
+  .msg { max-width: 94%; }
+  .formgrid { grid-template-columns: 1fr; }
+  .docitem, .deadlineitem, .commitem, .watchitem { flex-wrap: wrap; }
+  .simquestion { font-size: 19px; }
+}
+
+/* Reduced motion: the animated background freezes, parallax is
+   switched off (Fx.tsx also never installs its handler), ripples
+   and chevron turns disappear. Content is never hidden either way. */
+@media (prefers-reduced-motion: reduce) {
+  .blob { animation: none !important; }
+  .ripple-ink { display: none !important; }
+  .chev { transition: none; }
+  [data-px] { transform: none !important; }
+  .field input, .field select, .field textarea,
+  .composerrow input, .composerrow textarea { transition: none; }
+}
+
+/* ============================================================
+   APP SHELL (Module E) + STEP-SCREEN INTERVIEW
+   The app is a fixed 100dvh column: slim top bar, one content
+   region, bottom tab bar. The body never scrolls on any route;
+   regions manage their own overflow internally (thin scrollbars)
+   — except the interview, which allows no scrolling anywhere:
+   one question per screen, composed to fit.
+   ============================================================ */
+html, body { height: 100%; }
+body {
+  display: flex; flex-direction: column;
+  height: 100vh; height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+* { -webkit-tap-highlight-color: transparent; }
+button, a, input, select, textarea, .badge, .tab { touch-action: manipulation; }
+.sitehead, .tabbar { user-select: none; -webkit-user-select: none; }
+input, select, textarea { font-size: 16px; }
+
+.sitehead { flex: none; position: relative; }
+main {
+  flex: 1 1 auto; min-height: 0; width: 100%;
+  overflow-y: auto; overflow-x: hidden;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+main::-webkit-scrollbar { width: 6px; }
+main::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+.sitefoot { display: none; }
+
+/* Bottom tab bar — native-app style */
+.tabbar {
+  flex: none; display: flex; align-items: stretch;
+  border-top: 1px solid var(--line);
+  background: rgba(11, 14, 20, 0.94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  padding-bottom: env(safe-area-inset-bottom);
+  position: relative; z-index: 6;
+}
+.tab {
+  flex: 1; min-height: 56px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px;
+  text-decoration: none; color: var(--ink2); font-size: 10.5px;
+  padding: 6px 2px 7px; position: relative;
+}
+.tabicon { font-size: 20px; line-height: 1.15; filter: grayscale(0.35); opacity: 0.85; }
+.tab.active { color: var(--gold); font-weight: bold; }
+.tab.active .tabicon { filter: none; opacity: 1; }
+.tab.center { justify-content: flex-start; }
+.tab.center .tabicon {
+  width: 46px; height: 46px; margin-top: -17px; border-radius: 50%;
+  background: var(--gold); color: var(--goldink);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 21px; filter: none; opacity: 1;
+  border: 3px solid var(--paper); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+}
+.tab.center { color: var(--ink); }
+.tab.center.active { color: var(--gold); }
+
+/* The interview route: main becomes a locked stage — no region
+   scroll, no page padding, full width. */
+@media (max-width: 480px) {
+  /* Keep the slim bar uncrowded on phones: the account links
+     need the room more than the brand suffix does. */
+  .brand span { display: none; }
+  .sitehead nav { gap: 12px; font-size: 13.5px; }
+}
+main:has(.interviewpage) { overflow: hidden; padding: 0; max-width: none; }
+.interviewpage { height: 100%; margin: 0; display: flex; flex-direction: column; }
+
+/* App home screen: fits one phone screen whole. */
+main:has(.apphome) { padding: 6px 12px; display: flex; flex-direction: column; }
+.apphome {
+  flex: 1; min-height: 0; width: 100%; max-width: 860px; margin: 0 auto;
+  display: flex; flex-direction: column; justify-content: center; gap: 8px;
+}
+.apphome .hero-card { padding: 12px 16px 11px; }
+.apphome .eyebrow { font-size: 11px; letter-spacing: 1.6px; margin-bottom: 6px; }
+.apphome .hero-card h1 { font-size: 24px; line-height: 1.16; margin-bottom: 6px; }
+.apphome .lede { font-size: 14.5px; line-height: 1.45; margin-bottom: 9px; }
+.apphome .hero-card .btn.big { padding: 13px 22px; }
+.apphome .price { font-size: 14px; line-height: 1.35; margin: 8px 0 4px; }
+.apphome .hero-card .fineprint { font-size: 12px; line-height: 1.35; }
+.quickgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.quicktile {
+  display: flex; flex-direction: row; align-items: center; gap: 10px;
+  background: rgba(22, 26, 36, 0.78); border: 1px solid var(--line); border-radius: 14px;
+  padding: 7px 12px; text-decoration: none; color: var(--ink);
+  position: relative; overflow: hidden; line-height: 1.25;
+}
+.quickicon { font-size: 20px; line-height: 1; flex: none; }
+.quicktexts { display: flex; flex-direction: column; min-width: 0; }
+.quicklabel { font-weight: bold; font-size: 15px; }
+.quicksub { font-size: 12px; color: var(--ink2); }
+.apphome-note { text-align: center; font-size: 12px; line-height: 1.3; color: var(--ink2); margin: 0; }
+
+/* Dashboard inside the shell: nav becomes a single swipeable row,
+   case cards read as app tiles. */
+.dashnav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.dashnav::-webkit-scrollbar { display: none; }
+.dashnav a { flex: none; }
+.dashpage .grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+.dashpage .card { border-radius: 14px; padding: 16px; gap: 8px; }
+
+/* Library closing sections (the site's long-form legal copy now
+   lives at the foot of the library, inside its scroll region). */
+.libhonest { margin-top: 34px; border-top: 1px solid var(--line); padding-top: 16px; }
+.libfine { margin-top: 18px; padding-bottom: 10px; }
+
+/* ---- Step-screen interview ---- */
+.stepshell { flex: 1; min-height: 0; display: flex; flex-direction: column; background: rgba(11, 14, 20, 0.55); }
+.stephead {
+  flex: none; display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px; border-bottom: 1px solid var(--line);
+  background: rgba(11, 14, 20, 0.9); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.stephead .homelink { color: var(--gold); text-decoration: none; font-size: 14px; flex: none; padding: 6px 2px; }
+.stepmotion {
+  flex: 1 1 auto; min-width: 0; font-weight: bold; font-size: 14.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stepprogress { flex: none; font-size: 12.5px; }
+.stephead .voicebtn { margin: 0; flex: none; font-size: 13px; padding: 7px 10px; }
+.voicestrip {
+  flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 6px 14px; border-bottom: 1px solid var(--line);
+  background: rgba(28, 33, 46, 0.6); font-size: 13.5px;
+}
+.voicestrip .btn { margin: 0; }
+.voicestrip .voicenote { flex-basis: 100%; }
+
+.stepscreen {
+  flex: 1; min-height: 0; overflow: hidden;
+  width: 100%; max-width: 860px; margin: 0 auto;
+  display: flex; flex-direction: column;
+  animation: stepin 0.22s ease-out;
+}
+@keyframes stepin {
+  from { opacity: 0; transform: translateX(14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.stepbody {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  padding: 16px 16px calc(14px + env(safe-area-inset-bottom));
+  overflow: hidden;
+}
+.stepbody.center { align-items: center; justify-content: center; text-align: center; }
+
+/* Step layout rule (one mechanism for every stage): the page and
+   body NEVER scroll; a step's CONTENT region (.stepmain) scrolls
+   internally when — and only when — its content overflows the
+   stage, while the step's controls (.stepactions: Back / Continue
+   / primary action, the options rail, the composer) stay pinned
+   outside the scroll region, always visible and tappable. */
+.stepmain {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain; display: flex; flex-direction: column;
+  scrollbar-width: thin;
+}
+.stepbody.center .stepmain { justify-content: center; align-items: center; }
+.stepactions {
+  flex: none; display: flex; flex-direction: column; gap: 10px;
+  padding-top: 10px;
+}
+.stepactions .reviewnav { margin-top: 0; }
+
+.stepkicker {
+  margin: 0 0 2px; font-size: 12.5px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--gold); font-weight: bold;
+}
+.steptitle { font-size: 23px; line-height: 1.25; margin: 0 0 10px; }
+.steptitle.sm { font-size: 19px; }
+.steptext { font-size: 16.5px; line-height: 1.5; margin: 0 0 10px; }
+.stepnote { font-size: 14px; color: var(--ink2); line-height: 1.5; margin: 0 0 10px; }
+.stepbody .warn { margin: 0 0 12px; font-size: 14px; }
+.stepbanner {
+  font-size: 13.5px; color: var(--ink2); font-style: italic; margin: 0 0 10px;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.stepfoot { margin-top: auto; }
+
+/* Selectable options: ONE single-line horizontal rail of badges.
+   No wrapping; chips never shrink below readable size; the rail
+   scrolls sideways. A horizontal pan moves the rail, a vertical
+   pan still drives the step's vertical scroll region — the two
+   axes do not fight (touch-action: pan-x pan-y). */
+.badgerail {
+  display: flex; flex-wrap: nowrap; gap: 8px;
+  overflow-x: auto; overflow-y: hidden;
+  overscroll-behavior-x: contain; touch-action: pan-x pan-y;
+  padding: 2px 2px 6px; scrollbar-width: none;
+}
+.badgerail::-webkit-scrollbar { display: none; }
+.badgerail .badge {
+  flex: none; white-space: nowrap; padding: 11px 14px; font-size: 15px;
+}
+.badgerail .badge.sel {
+  border-color: var(--gold); background: rgba(217, 166, 46, 0.2);
+  color: #fff; font-weight: 600;
+}
+
+/* Question screens */
+.qscreen .qtext { font-size: 21px; line-height: 1.35; margin: 0 0 6px; }
+.qhint { font-size: 14px; color: var(--ink2); margin: 0 0 10px; line-height: 1.45; }
+.countyprompt { font-weight: bold; }
+.stepcomposer { border-top: 1px solid var(--line); padding-top: 10px; }
+.backbtn {
+  align-self: flex-start; background: none; border: none; color: var(--gold);
+  font-family: inherit; font-size: 14.5px; cursor: pointer; padding: 4px 4px 8px 0;
+}
+
+/* Pick drill-down */
+.catgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+.catitem {
+  display: flex; flex-direction: column; gap: 2px; text-align: left;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 12px; padding: 14px; font-family: inherit; cursor: pointer;
+  position: relative; overflow: hidden; min-height: 76px; justify-content: center;
+}
+.catitem strong { font-size: 16.5px; }
+.catitem span { font-size: 13px; color: var(--ink2); }
+.pickhead { display: flex; align-items: center; gap: 8px; }
+.pickhead .steptitle { margin: 0 0 8px; }
+.pickgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.pickgrid .pickitem { margin: 0; border-radius: 12px; padding: 10px 12px; }
+.pickgrid .pickitem strong { font-size: 14.5px; line-height: 1.3; display: block; }
+.pickgrid .pickitem span {
+  font-size: 12px; line-height: 1.35; margin-top: 3px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* Subject screen: the profile form, compact enough to fit whole. */
+.stepbody .subjectcard { padding: 13px 14px; }
+.stepbody .subjectcard h4 { margin-bottom: 4px; font-size: 16px; }
+.stepbody .subjectcard .formgrid { grid-template-columns: 1fr 1fr; gap: 7px 12px; margin: 8px 0 4px; }
+.stepbody .subjectcard .field { gap: 1px; }
+.stepbody .subjectcard .field label { font-size: 12px; }
+.stepbody .subjectcard .field input { padding: 5px 2px; }
+.stepbody .subjectcard .checkrow { margin: 6px 0; font-size: 13.5px; }
+.stepbody .gatecard { padding: 14px; }
+
+/* Review screen: dense pairs, clamped so a page always fits. */
+.reviewlist { display: flex; flex-direction: column; margin: 2px 0 10px; }
+.reviewrow {
+  display: flex; flex-direction: column; gap: 0;
+  padding: 6px 0; border-bottom: 1px solid var(--line);
+}
+.reviewq {
+  font-size: 11.5px; color: var(--ink2); line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+}
+.reviewa {
+  font-size: 14.5px; line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.reviewnav { margin-top: auto; display: flex; gap: 8px; }
+.reviewnav .btn { flex: 1; text-align: center; margin: 0; padding: 12px 10px; }
+
+/* Signature + pay inside the stage */
+.stepbody .sigblock { gap: 10px; }
+.stepbody .paycard { padding: 14px; }
+.stepbody .paycard .field { margin: 10px 0; }
+
+/* Done screen: filing steps, paginated by the component */
+.stepbody .filing { padding: 14px 16px; }
+.stepbody .filing h3 { margin: 0 0 8px; font-size: 19px; }
+.stepbody .filing li { margin-bottom: 10px; }
+
+/* Step screens under reduced motion: no slide, content as-is. */
+@media (prefers-reduced-motion: reduce) {
+  .stepscreen { animation: none !important; }
+}
+
+/* Very short screens: tighten the question type a step. */
+@media (max-height: 660px) {
+  .qscreen .qtext { font-size: 19px; }
+  .steptitle { font-size: 21px; }
+  .stepbody { padding-top: 12px; }
+}
+
+/* Line-illustration icons (components/icons.tsx) — sized to the
+   slots the old emoji occupied; gold where the surface wants an
+   accent, currentColor elsewhere. */
+.tabicon svg, .quickicon svg { display: block; }
+.brand svg { color: var(--gold); }
+.badge svg { margin-right: 6px; }
+.catitem > svg { color: var(--gold); }
+.libcat-head svg { color: var(--gold); }
+.dashnav a svg { margin-right: 2px; }
+.micbtn svg, .voicebtn svg, .voicectl .btn svg { margin-right: 1px; }
+
+/* Popup modal (components/Modal.tsx) — bottom sheet on phones,
+   centered card on desktop. The page behind never scrolls; a long
+   form scrolls inside the sheet. */
+.modalbackdrop {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(4, 6, 10, 0.66);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.modalcard {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 16px 16px 0 0; width: 100%;
+  max-height: 92dvh; display: flex; flex-direction: column;
+  padding: 16px 18px calc(16px + env(safe-area-inset-bottom));
+  animation: modalup 0.18s ease-out;
+}
+.modalhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.modalhead h3 { margin: 0; }
+.modalx {
+  width: 48px; height: 48px; flex: none; display: grid; place-items: center;
+  background: none; border: 1px solid var(--line); border-radius: 10px;
+  color: var(--ink); cursor: pointer;
+}
+.modalbody { overflow-y: auto; }
+@keyframes modalup { from { transform: translateY(14px); opacity: 0.5; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .modalcard { animation: none; } }
+@media (min-width: 720px) {
+  .modalbackdrop { align-items: center; padding: 24px; }
+  .modalcard { border-radius: 16px; max-width: 560px; max-height: 86dvh; }
+}
+
+/* Unanswered-reply badge (components/ReplyBadge.tsx) — pill metrics
+   mirror .statuspill; amber while the reply window is open, red
+   once the response deadline has passed. */
+.replybadge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: bold;
+  background: var(--goldtint); border: 1px solid var(--gold);
+  border-radius: 999px; padding: 2px 10px; color: var(--ink);
+}
+.replybadge .replydot { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); flex: none; }
+.replybadge.overdue { background: rgba(224, 101, 95, 0.14); border-color: var(--err); color: var(--err); }
+.replybadge.overdue .replydot { background: var(--err); }
+
+/* Court-mail inbox — a browse page: the list scrolls inside its
+   own region on tall screens; the tab bar stays put. */
+.inboxaddr {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 17px;
+  font-weight: bold; word-break: break-all; margin: 8px 0;
+}
+.inboxlayout { display: grid; grid-template-columns: minmax(240px, 340px) 1fr; gap: 18px; align-items: start; }
+@media (max-width: 760px) { .inboxlayout { grid-template-columns: 1fr; } }
+.inboxlist { display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow-y: auto; padding-right: 2px; }
+.inboxitem {
+  display: flex; flex-direction: column; gap: 3px; text-align: left; width: 100%;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; font-family: inherit; font-size: 15px; color: var(--ink); cursor: pointer;
+}
+.inboxitem.sel { border-color: var(--gold); background: var(--goldtint); }
+.inboxitem-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.inboxitem-subj { color: var(--ink2); }
+.inboxitem-chips { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.inboxmsg h2 { margin-top: 0; }
+.inboxbody {
+  white-space: pre-wrap; background: var(--card); border: 1px solid var(--line);
+  border-radius: 10px; padding: 12px 14px; font-size: 15px; max-height: 50vh; overflow-y: auto;
+}
+.inboxassign p { margin-top: 0; }
+.inboxreply { margin-top: 12px; }
+.factcard {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 10px;
+}
+.factcard-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.factvalue { font-size: 17px; font-weight: bold; margin: 6px 0; }
+.factspan {
+  margin: 8px 0; padding: 8px 12px; border-left: 3px solid var(--gold);
+  background: var(--bot); color: var(--ink2); font-size: 14px;
+}
+.checkline { display: block; margin: 10px 0; font-size: 15px; }
+.checkline input[type="checkbox"] { width: 18px; height: 18px; vertical-align: -3px; }
+.casefacts-list { list-style: none; margin: 10px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.casefacts-list .factcard { margin-bottom: 0; }
