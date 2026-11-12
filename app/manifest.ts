@@ -4,8 +4,8 @@ import type { MetadataRoute } from 'next';
 // match the app field, gold-on-dark icons in public/icons/.
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'legal.eyeknow.app — Court motions, prepared from your answers',
-    short_name: 'Legal Motions',
+    name: 'quikForm — Court motions, prepared from your answers',
+    short_name: 'quikForm',
     description:
       'Answer plain-English questions and get a filing-ready court motion PDF for $3. Document preparation, not a law firm.',
     start_url: '/',
