@@ -44,8 +44,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <Fx />
         <header className="sitehead">
-          <a className="brand" href="/"><Icon name="scales" size={20} /> quikForm</span></a>
-          <nav>
+<a className="brand" href="/">
+  <Icon name="scales" size={20} /> <span>quikForm</span>
+</a>          <nav>
             <AccountNav />
           </nav>
         </header>
