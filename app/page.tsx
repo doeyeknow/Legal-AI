@@ -24,8 +24,8 @@ export default function Home() {
           questions one at a time, and prepare your filing-ready PDF — no retainer, no
           hourly bill.
         </p>
-        <Link className="btn primary big" href="/interview">Start the free interview</Link>
-        <p className="price">The interview is free. A prepared document is <strong>$3</strong> — paid only when your PDF is generated.</p>
+        <Link className="btn primary big" href="/interview">Get Started</Link>
+        <p className="price">The interview is free. Documents are only<strong>$3</strong> or Free with subscription. </p>
         <p className="fineprint">{DISCLAIMER}</p>
       </section>
 
