@@ -27,10 +27,13 @@ export const metadata: Metadata = {
   },
 };
 
+
+};
+
 export const viewport: Viewport = {
   themeColor: '#0B0E14',
   width: 'device-width',
-  initialScale: 0.7,
+  initialScale: 1,
   viewportFit: 'cover',
 };
 
@@ -41,12 +44,11 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
+       <body>
         <Fx />
         <header className="sitehead">
-<a className="brand" href="/">
-  <Icon name="scales" size={20} /> <span>quikForm</span>
-</a>          <nav>
+          <a className="brand" href="/"><Icon name="scales" size={20} /> quik<span>Form</span></a>
+          <nav>
             <AccountNav />
           </nav>
         </header>
@@ -56,3 +58,4 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     </html>
   );
 }
+
