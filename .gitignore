@@ -1,2 +1,6 @@
 # Local secrets written by `elevenlabs onboard`
 /.env.local
+.next/
+node_modules/
+server.log
+tsconfig.tsbuildinfo

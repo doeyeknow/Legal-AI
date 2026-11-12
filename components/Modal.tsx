@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from './icons';
 
 /**
@@ -14,6 +15,10 @@ import { Icon } from './icons';
  * form's own submit button, which closes the modal itself on
  * success. The page behind never scrolls (the shell is fixed);
  * a long form scrolls inside the sheet.
+ *
+ * Portaled to document.body: a fixed-position sheet must escape
+ * any ancestor with backdrop-filter (the chat dock has one),
+ * which would otherwise become its containing block and clip it.
  */
 export default function Modal({
   title,
@@ -32,7 +37,7 @@ export default function Modal({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div
       className="modalbackdrop"
       onClick={onClose}
@@ -58,6 +63,7 @@ export default function Modal({
         </div>
         <div className="modalbody">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

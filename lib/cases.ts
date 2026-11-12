@@ -65,7 +65,7 @@ interface DeadlineRow {
 interface DocRow {
   id: string; motion_id: string; motion_name: string; fee_waiver: boolean;
   answers: Record<string, string>; created_at: string;
-  case_facts: Record<string, string> | null;
+  case_facts: Record<string, string> | null; label: string | null;
 }
 interface CommRow {
   id: string; case_id: string; direction: "to_court" | "from_court";
@@ -214,7 +214,7 @@ export async function getCaseDetail(
   if (!row) return null;
   const summary = rowToSummary(row);
   const docs = await query<DocRow>(
-    `SELECT id, motion_id, motion_name, fee_waiver, answers, created_at, case_facts
+    `SELECT id, motion_id, motion_name, fee_waiver, answers, created_at, case_facts, label
      FROM documents WHERE case_id = $1 AND user_id = $2 ORDER BY created_at DESC`,
     [caseId, userId],
   );
@@ -276,6 +276,7 @@ export async function getCaseDetail(
       motionId: d.motion_id,
       motionName: d.motion_name,
       feeWaiver: d.fee_waiver,
+      label: d.label ?? null,
       createdAt: new Date(d.created_at).toISOString(),
       answers: d.answers || {},
     })),
@@ -612,7 +613,7 @@ export async function getDocument(
 }) | null> {
   await ensureSchema();
   const rows = await query<DocRow>(
-    `SELECT id, motion_id, motion_name, fee_waiver, answers, created_at, case_facts
+    `SELECT id, motion_id, motion_name, fee_waiver, answers, created_at, case_facts, label
      FROM documents WHERE id = $1 AND case_id = $2 AND user_id = $3`,
     [docId, caseId, userId],
   );
@@ -622,6 +623,7 @@ export async function getDocument(
     motionId: rows[0].motion_id,
     motionName: rows[0].motion_name,
     feeWaiver: rows[0].fee_waiver,
+    label: rows[0].label ?? null,
     createdAt: new Date(rows[0].created_at).toISOString(),
     answers: rows[0].answers || {},
     caseFacts: rows[0].case_facts || null,
@@ -864,4 +866,115 @@ export async function recordWatchCheck(
       note,
     ]);
   }
+}
+
+/** Every saved document across the user's cases, newest first —
+ *  the evidence locker's file list. */
+export async function listDocuments(
+  userId: string,
+): Promise<
+  {
+    id: string; caseId: string; caseTitle: string; motionId: string;
+    motionName: string; feeWaiver: boolean; label: string | null; createdAt: string;
+  }[]
+> {
+  await ensureSchema();
+  const rows = await query<{
+    id: string; case_id: string; case_title: string; motion_id: string;
+    motion_name: string; fee_waiver: boolean; created_at: string; label: string | null;
+  }>(
+    `SELECT d.id, d.case_id, c.title AS case_title, d.motion_id, d.motion_name,
+            d.fee_waiver, d.created_at, d.label
+     FROM documents d
+     JOIN cases c ON c.id = d.case_id
+     WHERE d.user_id = $1
+     ORDER BY d.created_at DESC`,
+    [userId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    caseId: r.case_id,
+    caseTitle: r.case_title,
+    motionId: r.motion_id,
+    motionName: r.motion_name,
+    feeWaiver: r.fee_waiver,
+    label: r.label ?? null,
+    createdAt: new Date(r.created_at).toISOString(),
+  }));
+}
+
+/** All deadlines — open and done — across the user's cases, for the
+ *  calendar view. */
+export async function allDeadlines(
+  userId: string,
+): Promise<(Deadline & { caseTitle: string })[]> {
+  await ensureSchema();
+  const rows = await query<DeadlineRow & { case_title: string }>(
+    `SELECT d.id, d.case_id, d.type, d.label, d.due_at, d.done, d.created_at,
+            c.title AS case_title
+     FROM deadlines d
+     JOIN cases c ON c.id = d.case_id
+     WHERE c.user_id = $1
+     ORDER BY d.due_at ASC`,
+    [userId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    caseId: r.case_id,
+    type: r.type,
+    label: r.label,
+    dueAt: String(r.due_at).slice(0, 10),
+    done: r.done,
+    createdAt: new Date(r.created_at).toISOString(),
+    caseTitle: r.case_title,
+  }));
+}
+
+/** Delete one of the user's own cases. Owned rows (documents,
+ *  deadlines, comms, watches, appearances) cascade with it; court
+ *  mail is never deleted — it is simply unassigned (ON DELETE
+ *  SET NULL on inbound_messages.case_id). */
+export async function deleteCase(userId: string, caseId: string): Promise<boolean> {
+  await ensureSchema();
+  const rows = await query<{ id: string }>(
+    `DELETE FROM cases WHERE id = $1 AND user_id = $2 RETURNING id`,
+    [caseId, userId],
+  );
+  return rows.length > 0;
+}
+
+/** Delete one document from one of the user's own cases. */
+export async function deleteDocument(
+  userId: string,
+  caseId: string,
+  docId: string,
+): Promise<boolean> {
+  await ensureSchema();
+  const rows = await query<{ id: string }>(
+    `DELETE FROM documents d
+     USING cases c
+     WHERE d.id = $1 AND d.case_id = c.id AND c.id = $2 AND c.user_id = $3
+     RETURNING d.id`,
+    [docId, caseId, userId],
+  );
+  return rows.length > 0;
+}
+
+/** Rename a document — its display label in the evidence locker
+ *  and on the case page. */
+export async function renameDocument(
+  userId: string,
+  caseId: string,
+  docId: string,
+  label: string,
+): Promise<boolean> {
+  await ensureSchema();
+  const rows = await query<{ id: string }>(
+    `UPDATE documents d SET label = $4
+     FROM cases c
+     WHERE d.id = $1 AND d.case_id = c.id AND c.id = $2 AND c.user_id = $3
+     RETURNING d.id`,
+    [docId, caseId, userId, label],
+  );
+  return rows.length > 0;
 }

@@ -1,11 +1,12 @@
 import Link from 'next/link';
 import { DISCLAIMER } from '@/lib/motions/types';
 import { Icon, type IconName } from '@/components/icons';
+import HelpTip from '@/components/HelpTip';
 
 // App home screen: sized to fit one phone screen whole — the hero
 // with the one primary action, then a grid of quick entries. The
-// how-it-works detail lives one tap away in the library; nothing
-// here needs a scroll.
+// detail (how it works, the legal fineprint) lives one tap away
+// behind the "?" chips; nothing here needs a scroll.
 const QUICK: { href: string; icon: IconName; label: string; sub: string }[] = [
   { href: '/library', icon: 'book', label: 'Motion library', sub: 'Browse all motions' },
   { href: '/dashboard', icon: 'folder', label: 'My cases', sub: 'Filings & deadlines' },
@@ -19,14 +20,19 @@ export default function Home() {
       <section className="hero-card" data-px="0.05">
         <p className="eyebrow">Why pay lawyer prices?</p>
         <h1>Lawyers charge hundreds an hour. Your court motion costs $3.</h1>
-        <p className="lede">
-          Describe your situation in plain words. We match it to the right motion, ask its
-          questions one at a time, and prepare your filing-ready PDF — no retainer, no
-          hourly bill.
-        </p>
         <Link className="btn primary big" href="/interview">Get Started</Link>
-        <p className="price">The interview is free. Documents are only<strong>$3</strong> or Free with subscription. </p>
-        <p className="fineprint">{DISCLAIMER}</p>
+        <p className="price">
+          Free interview · <strong>$3</strong> document · free with subscription
+        </p>
+        <p className="homerow">
+          <HelpTip title="How this works">
+            Describe your situation in plain words. We match it to the right motion, ask its
+            questions one at a time, and prepare your filing-ready PDF — no retainer, no
+            hourly bill. The interview is free; the $3 is charged only when your PDF is
+            generated.
+          </HelpTip>
+          <HelpTip title="The fine print">{DISCLAIMER}</HelpTip>
+        </p>
       </section>
 
       <nav className="quickgrid" aria-label="Quick entries">

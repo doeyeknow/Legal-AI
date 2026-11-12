@@ -2,9 +2,11 @@ import Link from 'next/link';
 import { ALL_MOTIONS, CATEGORIES } from '@/lib/motions/data';
 import { DISCLAIMER } from '@/lib/motions/types';
 import LibraryBrowser from '@/components/LibraryBrowser';
+import FinderShell from '@/components/FinderShell';
 
 export default function LibraryPage() {
   return (
+    <FinderShell>
     <div className="library">
       <h1>Motion library</h1>
       <p>
@@ -35,5 +37,6 @@ export default function LibraryPage() {
         </p>
       </section>
     </div>
+    </FinderShell>
   );
 }

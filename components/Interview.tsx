@@ -11,6 +11,9 @@ import { FACT_ANSWER_KEYS, SEED_EXCLUDED_KEYS } from '@/lib/case-facts';
 import type { ProfileInfo } from '@/lib/profile';
 import { EMPTY_PROFILE, PROFILE_FIELDS, composeAddress } from '@/lib/profile';
 import SignaturePad from './SignaturePad';
+import HelpTip from './HelpTip';
+import DatePicker from './DatePicker';
+import DialPad from './DialPad';
 import { SpeechPlayer } from '@/lib/speech';
 import type { CourtRecord } from '@/lib/courts/index';
 import { isCriminalAdversarial, statePartyName } from '@/lib/state-party';
@@ -94,8 +97,8 @@ const STORE_KEY = 'legal-interview-v1';
 
 export default function Interview() {
   const [msgs, setMsgs] = useState<Msg[]>([
-    { from: 'bot', text: 'Tell me what is going on, in your own words. I will match your situation to the right court motion, ask you the questions it needs one at a time, take your signature, and prepare a filing-ready document.' },
-    { from: 'bot', text: DISCLAIMER + ' The interview is free — a prepared document costs $3, charged only when your PDF is generated.' },
+    { from: 'bot', text: 'Tell me what is going on, in your own words. I will match it to the right court motion, ask its questions one at a time, and prepare a filing-ready document.' },
+    { from: 'bot', text: 'The interview is free. A prepared document is $3 — charged only when your PDF is generated.' },
   ]);
   const [stage, setStage] = useState<Stage>('boot');
   const [input, setInput] = useState('');
@@ -122,14 +125,13 @@ export default function Interview() {
   const [subjectInfo, setSubjectInfo] = useState<SubjectInfo>({ ...EMPTY_PROFILE, email: '' });
   const [saveBack, setSaveBack] = useState(true);
   const [subjectSeeded, setSubjectSeeded] = useState(false);
-  // --- Step-screen presentation state (display only) ---
+  // --- Chat-thread presentation state (display only) ---
   // Motion picking is a drill-down: categories first, then one
-  // category's motions. Review and filing steps paginate instead
-  // of scrolling when a phone screen cannot hold them all.
+  // category's motions. The thread itself scrolls, so review and
+  // filing steps simply show in full — no pagination.
   const [pickCat, setPickCat] = useState<string | null>(null);
-  const [pickPage, setPickPage] = useState(0);
-  const [reviewPage, setReviewPage] = useState(0);
-  const [donePage, setDonePage] = useState(0);
+  const [datePickOpen, setDatePickOpen] = useState(false);
+  const logRef = useRef<HTMLDivElement | null>(null);
   // A motion deep-linked from the library (?motion=<id>): once the
   // flow reaches its natural start (guest start, or the subject
   // step for signed-in users) it begins there instead of at the
@@ -492,7 +494,7 @@ export default function Interview() {
   // Entering the pick stage always starts at the category screen
   // (the drill-down within it is presentation state only).
   useEffect(() => {
-    if (stage === 'pick') { setPickCat(null); setPickPage(0); }
+    if (stage === 'pick') { setPickCat(null); }
   }, [stage]);
 
   const grouped = useMemo(() => {
@@ -810,7 +812,6 @@ export default function Interview() {
   /** Every path that used to land on the signature step now stops
    *  at the review screen first; Continue there goes to signing. */
   function enterReview() {
-    setReviewPage(0);
     setStage('review');
     say('bot', 'Before you sign, here is everything you told me — check it over.');
   }
@@ -1383,31 +1384,17 @@ export default function Interview() {
     }
   }
 
-  // ---- Step-screen derivation ----------------------------------
+  // ---- Chat-thread derivation ----------------------------------
   // The engine above is untouched; what follows only decides how
-  // the CURRENT step is displayed. Bot messages since the last
-  // user message belong to the current step: a few screens quote
-  // them (welcome lines, the county confirmation), the rest
-  // compose their copy from state, exactly as the handlers said it.
+  // the CURRENT step is displayed. The full conversation renders
+  // as bubbles; the current turn's LAST bot message is the live
+  // question for Q&A stages, so it is rendered from state (with
+  // its hint behind a "?") instead of appearing twice.
   const lastUserIdx = msgs.reduce((acc, m, i) => (m.from === 'user' ? i : acc), -1);
   const turnBots = msgs
     .slice(lastUserIdx + 1)
     .filter((m) => m.from === 'bot')
     .map((m) => m.text);
-  let banner: string | null = null;
-  if (stage === 'fields' || stage === 'feew-fields') {
-    banner =
-      turnBots.find((t) => t.startsWith('Welcome back')) ||
-      turnBots.find((t) => t.startsWith('No problem — type the county')) ||
-      (qIdx === 0
-        ? turnBots.find((t) => t.startsWith('I will ask') || t.startsWith('I already have'))
-        : undefined) ||
-      null;
-  } else if (stage === 'subject') {
-    banner = turnBots.length ? turnBots[turnBots.length - 1] : null;
-  } else if (stage === 'situation' && acct === 'user') {
-    banner = turnBots.find((t) => t.startsWith('Saved —')) || null;
-  }
   const countyPrompt = pendingCounty
     ? turnBots[turnBots.length - 1] || ''
     : '';
@@ -1431,19 +1418,7 @@ export default function Interview() {
     }
     return out;
   })();
-  const REVIEW_PER_PAGE = 8;
-  const reviewPages = Math.max(1, Math.ceil(reviewPairs.length / REVIEW_PER_PAGE));
-  const reviewShown = reviewPairs.slice(
-    reviewPage * REVIEW_PER_PAGE,
-    reviewPage * REVIEW_PER_PAGE + REVIEW_PER_PAGE,
-  );
-  const DONE_PER_PAGE = 3;
-  const donePages = filing
-    ? Math.max(1, Math.ceil(filing.steps.length / DONE_PER_PAGE))
-    : 1;
-  const doneShown = filing
-    ? filing.steps.slice(donePage * DONE_PER_PAGE, donePage * DONE_PER_PAGE + DONE_PER_PAGE)
-    : [];
+  const doneSteps = filing ? filing.steps : [];
 
   let progressLabel: string | null = null;
   if (stage === 'casefacts') {
@@ -1463,9 +1438,6 @@ export default function Interview() {
   const screenKey = [
     stage,
     stage === 'fields' || stage === 'feew-fields' ? qIdx : '',
-    stage === 'pick' ? `${pickCat || 'cats'}-${pickPage}` : '',
-    stage === 'review' ? reviewPage : '',
-    stage === 'done' ? donePage : '',
     pendingCounty ? 'county' : '',
   ].join('-');
 
@@ -1552,27 +1524,81 @@ export default function Interview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage]);
 
-  // Pick drill-down pagination: the catalog is large now, so both
-  // levels page (8 at a time) instead of scrolling — the same
-  // idiom as the review screen. Categories present in the fixed
-  // taxonomy order, not in catalog-number order.
-  const PICK_PER_PAGE = 8;
+  // Pick drill-down: categories first (in the fixed taxonomy
+  // order), then one category's motions. The thread scrolls, so
+  // every option is shown — no pagination.
   const pickCats = CATEGORIES.filter((c) => (grouped[c] || []).length > 0);
-  const pickCatPages = Math.max(1, Math.ceil(pickCats.length / PICK_PER_PAGE));
-  const pickCatsShown = pickCats.slice(
-    pickPage * PICK_PER_PAGE,
-    pickPage * PICK_PER_PAGE + PICK_PER_PAGE
-  );
   const pickList = pickCat ? grouped[pickCat] || [] : [];
-  const pickItemPages = Math.max(1, Math.ceil(pickList.length / PICK_PER_PAGE));
-  const pickItemsShown = pickList.slice(
-    pickPage * PICK_PER_PAGE,
-    pickPage * PICK_PER_PAGE + PICK_PER_PAGE
-  );
+
+  // ---------- Chat-thread presentation ----------
+  // The whole conversation renders as bubbles in a scrolling
+  // thread; the current step is the live area at its foot — a
+  // question bubble for Q&A stages, an interactive card for the
+  // form-like ones. Quick-answer chips and the composer sit in a
+  // dock pinned to the bottom of the screen. The page itself
+  // never scrolls and never zooms.
+  const isQStage = stage === 'situation' || stage === 'fields' || stage === 'feew-fields';
+
+  // History: everything except the live question (the current
+  // turn's last bot message) on Q&A stages.
+  const historyMsgs =
+    stage === 'fields' || stage === 'feew-fields'
+      ? [
+          ...msgs.slice(0, lastUserIdx + 1),
+          ...msgs.slice(lastUserIdx + 1).filter((m) => m.from === 'bot').slice(0, -1),
+        ]
+      : msgs;
+
+  // The long "honest note" and warning copy a matched motion
+  // produces belongs in the confirm card's "?" popup, not as
+  // walls of text in the thread.
+  const isHiddenTip = (m: Msg) =>
+    m.from === 'bot' &&
+    (m.text.startsWith('Honest note:') || (motion ? m.text === motion.warning : false));
+
+  const liveQuestion =
+    stage === 'fields' || stage === 'feew-fields'
+      ? pendingCounty
+        ? countyPrompt
+        : currentField
+          ? currentField.label
+          : null
+      : null;
+  const liveHint = currentField && !pendingCounty ? currentField.hint : null;
+
+  // Keep the thread glued to the newest content as it arrives.
+  useEffect(() => {
+    const log = logRef.current;
+    if (log) log.scrollTop = log.scrollHeight;
+  }, [msgs.length, screenKey, liveQuestion]);
 
   const composer = (
     <div className="stepcomposer composer">
+      {datePickOpen && currentField?.type === 'date' && (
+        <DatePicker
+          title={currentField.label}
+          onClose={() => setDatePickOpen(false)}
+          onPick={(d) => {
+            setDatePickOpen(false);
+            submitInput(d);
+          }}
+        />
+      )}
+      {currentField?.type === 'phone' && (
+        <DialPad value={input} onChange={setInput} />
+      )}
       <div className="composerrow">
+        {currentField?.type === 'date' && (
+          <button
+            type="button"
+            className="composericon"
+            aria-label="Pick a date from the calendar"
+            title="Pick a date"
+            onClick={() => setDatePickOpen(true)}
+          >
+            <Icon name="calendar" size={19} />
+          </button>
+        )}
         {currentField?.type === 'textarea' ? (
           <textarea
             value={input}
@@ -1588,28 +1614,45 @@ export default function Interview() {
             onChange={(e) => setInput(e.target.value)}
             placeholder={stage === 'situation' ? 'Describe your situation…' : 'Type your answer…'}
             aria-label={stage === 'situation' ? 'Describe your situation' : 'Your answer'}
+            inputMode={currentField?.type === 'phone' ? 'tel' : undefined}
+            autoComplete={currentField?.type === 'phone' ? 'tel' : undefined}
             onKeyDown={(e) => { if (e.key === 'Enter') submitInput(); }}
           />
         )}
         <button
           type="button"
-          className={`btn micbtn${listening ? ' listening' : ''}`}
+          className={`composericon micbtn${listening ? ' listening' : ''}`}
           onClick={toggleMic}
           aria-pressed={listening}
           aria-label={listening ? 'Stop listening' : 'Answer by voice'}
         >
-          {listening ? <><Icon name="stop" size={16} /> Listening…</> : <><Icon name="mic" size={16} /> Speak</>}
+          {listening ? <Icon name="stop" size={18} /> : <Icon name="mic" size={18} />}
         </button>
-        <button className="btn primary" onClick={() => submitInput()}>Send</button>
+        <button
+          type="button"
+          className="sendbtn"
+          onClick={() => submitInput()}
+          aria-label="Send"
+        >
+          <Icon name="arrowUpCircle" size={22} />
+        </button>
       </div>
     </div>
   );
 
+  const botFace = (
+    <span className="botface" aria-hidden="true"><Icon name="scales" size={12} /></span>
+  );
+
+  const dockHasComposer = stage === 'situation' || stage === 'fields' || stage === 'feew-fields';
+  const dockEmpty =
+    !dockHasComposer && badges.length === 0 && !goBackVisible;
+
   return (
-    <div className="stepshell">
+    <div className="interviewpage chatpage">
       <header className="stephead voicebar">
-        <Link className="homelink" href="/">‹ Home</Link>
-        <span className="stepmotion">{motion ? motion.name : 'Prepare your motion'}</span>
+        <Link className="homelink" href="/" aria-label="Home">‹</Link>
+        <span className="stepmotion">{motion ? motion.name : 'New document'}</span>
         {progressLabel && <span className="progress stepprogress">{progressLabel}</span>}
         <button
           type="button"
@@ -1639,66 +1682,92 @@ export default function Interview() {
         </div>
       )}
 
-      <div className="stepscreen" key={screenKey}>
-        {stage === 'boot' && (
-          <div className="stepbody center">
-            <div className="stepmain">
-              <p className="steptext">Getting things ready…</p>
+      <div className="chatlog" ref={logRef}>
+        {historyMsgs.map((m, i) =>
+          isHiddenTip(m) ? null : (
+            <div key={i} className={`msgrow ${m.from}`}>
+              {m.from === 'bot' && botFace}
+              <div className={`msg ${m.from}`}>{m.text}</div>
+            </div>
+          )
+        )}
+
+        {(stage === 'boot' || stage === 'generating') && (
+          <div className="msgrow bot">
+            {botFace}
+            <div className="msg bot typing" aria-label="Working…">
+              <span /><span /><span />
+            </div>
+          </div>
+        )}
+
+        {liveQuestion && (
+          <div className="msgrow bot">
+            {botFace}
+            <div className="msg bot qbubble">
+              {liveQuestion}
+              {liveHint && (
+                <HelpTip title="Tip">
+                  <p className="hintbody">{liveHint}</p>
+                </HelpTip>
+              )}
+              {courtBadgesActive && !courtTyped && (
+                <p className="qhint">Courts for {answers.county} County, from the court database — pick yours below, or type it instead.</p>
+              )}
+              {otherMode && currentField?.type === 'select' && (
+                <p className="qhint">Type your own answer below — it will be used exactly as written.</p>
+              )}
             </div>
           </div>
         )}
 
         {stage === 'gate' && (
-          <div className="stepbody">
-            <div className="stepmain">
-            <div className="gatecard">
-              <h4>Start with a free account</h4>
-              <p>
-                Create an account or sign in, and your basic information — name, address, phone —
-                fills out the forms for you, this time and every time after.
-              </p>
-              <div className="choices">
-                <Link className="btn primary" href="/account">Sign in / Create account</Link>
-                <button
-                  className="btn ghost"
-                  onClick={() => {
-                    say('user', 'Continue as guest');
-                    if (preselectRef.current) {
-                      say('bot', 'No problem — I will ask for the information as we go.');
-                      beginFresh();
-                    } else {
-                      say('bot', 'No problem — I will ask for the information as we go. Tell me what is going on, in your own words.');
-                      setStage('situation');
-                    }
-                  }}
-                >
-                  Continue as guest
-                </button>
-              </div>
+          <div className="chatcard">
+            <h4>
+              Start with a free account
+              <HelpTip title="Why sign in?">
+                <p className="hintbody">
+                  Create an account or sign in, and your basic information — name, address,
+                  phone — fills out the forms for you, this time and every time after.
+                </p>
+              </HelpTip>
+            </h4>
+            <div className="choices">
+              <Link className="btn primary" href="/account">Sign in / Create account</Link>
+              <button
+                className="btn ghost"
+                onClick={() => {
+                  say('user', 'Continue as guest');
+                  if (preselectRef.current) {
+                    say('bot', 'No problem — I will ask for the information as we go.');
+                    beginFresh();
+                  } else {
+                    say('bot', 'No problem — I will ask for the information as we go. Tell me what is going on, in your own words.');
+                    setStage('situation');
+                  }
+                }}
+              >
+                Continue as guest
+              </button>
             </div>
-            <p className="fineprint stepfoot">{DISCLAIMER}</p>
-            </div>
-          </div>
-        )}
-
-        {stage === 'who' && (
-          <div className="stepbody">
-            <div className="stepmain">
-              <h2 className="steptitle">{turnBots.join(' ')}</h2>
-            </div>
-            <div className="stepactions">{badgeButtons()}</div>
+            <p className="fineprint cardfoot">
+              <HelpTip title="The fine print">{DISCLAIMER}</HelpTip>
+            </p>
           </div>
         )}
 
         {stage === 'casefacts' && (
-          <div className="stepbody">
-            <div className="stepmain">
-            <h2 className="steptitle">Facts from your court mail</h2>
-            <p className="stepnote">
-              You confirmed these from email the court sent. Pick the ones that belong in this
-              document — anything you switch off is asked about as usual, and nothing here is
-              used unless you leave it on.
-            </p>
+          <div className="chatcard">
+            <h4>
+              Facts from your court mail
+              <HelpTip title="What is this?">
+                <p className="hintbody">
+                  You confirmed these from email the court sent. Pick the ones that belong in
+                  this document — anything you switch off is asked about as usual, and
+                  nothing here is used unless you leave it on.
+                </p>
+              </HelpTip>
+            </h4>
             <ul className="casefacts-list">
               {caseFactRows.map((row) => (
                 <li className="factcard" key={row.bagKey}>
@@ -1706,7 +1775,7 @@ export default function Interview() {
                     <strong>{row.value}</strong>
                     <button
                       type="button"
-                      className={`btn ${caseFactUse[row.bagKey] === false ? 'ghost' : 'primary'}`}
+                      className={`btn small ${caseFactUse[row.bagKey] === false ? 'ghost' : 'primary'}`}
                       onClick={() =>
                         setCaseFactUse((u) => ({ ...u, [row.bagKey]: u[row.bagKey] === false }))
                       }
@@ -1718,105 +1787,85 @@ export default function Interview() {
                 </li>
               ))}
             </ul>
-            </div>
-            <div className="stepactions">
-              <button type="button" className="btn primary" onClick={continueFromCaseFacts}>
-                Continue
-              </button>
-            </div>
+            <button type="button" className="btn primary" onClick={continueFromCaseFacts}>
+              Continue
+            </button>
           </div>
         )}
 
         {stage === 'subject' && (
-          <div className="stepbody">
-            <div className="stepmain">
-            <div className="subjectcard">
-              <h4>{subject === 'self' ? 'Your information, from your profile' : 'The person this motion is for'}</h4>
-              {banner && <p className="stepbanner">{banner}</p>}
-              <div className="formgrid">
-                {PROFILE_FIELDS.map((f) => (
-                  <div className={`field${f.full ? ' full' : ''}`} key={f.key}>
-                    <label htmlFor={`subj-${f.key}`}>{f.label}</label>
-                    <input
-                      id={`subj-${f.key}`}
-                      value={subjectInfo[f.key]}
-                      autoComplete={f.autoComplete}
-                      onChange={(e) => setSubjectInfo((s) => ({ ...s, [f.key]: e.target.value }))}
-                    />
-                  </div>
-                ))}
-                <div className="field full">
-                  <label htmlFor="subj-email">Email address</label>
+          <div className="chatcard">
+            <h4>
+              {subject === 'self' ? 'Your information, from your profile' : 'The person this motion is for'}
+              <HelpTip title="Where does this go?">
+                <p className="hintbody">
+                  {subject === 'self'
+                    ? 'These details fill the caption, signature block, and filing steps of every document you prepare. Corrections here apply to this filing; the checkbox below also saves them to your profile for next time.'
+                    : 'Their information goes on the document — the caption, the signature block, and the filing steps at the end. It is used for this filing only: your account profile is not changed, and you remain the preparer.'}
+                </p>
+              </HelpTip>
+            </h4>
+            <div className="formgrid">
+              {PROFILE_FIELDS.map((f) => (
+                <div className={`field${f.full ? ' full' : ''}`} key={f.key}>
+                  <label htmlFor={`subj-${f.key}`}>{f.label}</label>
                   <input
-                    id="subj-email"
-                    type="email"
-                    value={subjectInfo.email}
-                    autoComplete="email"
-                    onChange={(e) => setSubjectInfo((s) => ({ ...s, email: e.target.value }))}
+                    id={`subj-${f.key}`}
+                    value={subjectInfo[f.key]}
+                    autoComplete={f.autoComplete}
+                    onChange={(e) => setSubjectInfo((s) => ({ ...s, [f.key]: e.target.value }))}
                   />
                 </div>
+              ))}
+              <div className="field full">
+                <label htmlFor="subj-email">Email address</label>
+                <input
+                  id="subj-email"
+                  type="email"
+                  value={subjectInfo.email}
+                  autoComplete="email"
+                  onChange={(e) => setSubjectInfo((s) => ({ ...s, email: e.target.value }))}
+                />
               </div>
-              {subject === 'self' ? (
-                <label className="checkrow">
-                  <input
-                    type="checkbox"
-                    checked={saveBack}
-                    onChange={(e) => setSaveBack(e.target.checked)}
-                  />
-                  Save any changes to my profile
-                </label>
-              ) : (
-                <p className="fineprint">
-                  Used for this filing only — it is not saved to your account, and your profile is
-                  not changed.
-                </p>
-              )}
             </div>
-            </div>
-            <div className="stepactions">
-              <button className="btn primary" disabled={!subjectInfo.fullName.trim()} onClick={applySubject}>
-                Use this information
-              </button>
-            </div>
-          </div>
-        )}
-
-        {stage === 'situation' && (
-          <div className="stepbody qscreen">
-            <div className="stepmain">
-              {banner && <p className="stepbanner">{banner}</p>}
-              <p className="steptext">{msgs[0]?.text}</p>
-              <p className="fineprint">{msgs[1]?.text}</p>
-            </div>
-            <div className="stepactions">{composer}</div>
+            {subject === 'self' ? (
+              <label className="checkrow">
+                <input
+                  type="checkbox"
+                  checked={saveBack}
+                  onChange={(e) => setSaveBack(e.target.checked)}
+                />
+                Save any changes to my profile
+              </label>
+            ) : null}
+            <button className="btn primary" disabled={!subjectInfo.fullName.trim()} onClick={applySubject}>
+              Use this information
+            </button>
           </div>
         )}
 
         {stage === 'confirm' && motion && (
-          <div className="stepbody">
-            <div className="stepmain">
-              <p className="stepkicker">This sounds like</p>
-              <h2 className="steptitle">{motion.name}</h2>
-              <p className="steptext">{motion.purpose}</p>
-              <p className="stepnote">Honest note: {motion.proSe}</p>
+          <div className="chatcard confirmcard">
+            <p className="stepkicker">This sounds like</p>
+            <h4>{motion.name}</h4>
+            <p className="cardsub">{motion.purpose}</p>
+            <HelpTip title="Is this the right one?">
+              <p className="hintbody">Honest note: {motion.proSe}</p>
               {motion.warning && <p className="warn">{motion.warning}</p>}
-            </div>
-            <div className="stepactions">{badgeButtons()}</div>
+            </HelpTip>
           </div>
         )}
 
         {stage === 'pick' && !pickCat && (
-          <div className="stepbody">
-            <div className="stepmain">
-            <h2 className="steptitle">Pick the closest fit</h2>
-            <p className="steptext">Start with the kind of case — then choose the document.</p>
+          <div className="chatcard">
+            <h4>Pick the closest fit</h4>
             <div className="catgrid">
-              {pickCatsShown.map((cat) => (
+              {pickCats.map((cat) => (
                 <button
                   key={cat}
                   type="button"
                   className="catitem"
-                  onClick={() => { setPickCat(cat); setPickPage(0); }}
+                  onClick={() => setPickCat(cat)}
                 >
                   <Icon name={CATEGORY_ICONS[cat] || 'doc'} size={20} />
                   <strong>{cat}</strong>
@@ -1824,37 +1873,19 @@ export default function Interview() {
                 </button>
               ))}
             </div>
-            </div>
-            {pickCatPages > 1 && (
-              <div className="stepactions">
-              <div className="reviewnav">
-                {pickPage > 0 && (
-                  <button type="button" className="btn ghost" onClick={() => setPickPage(pickPage - 1)}>
-                    ‹ Earlier kinds
-                  </button>
-                )}
-                {pickPage < pickCatPages - 1 && (
-                  <button type="button" className="btn primary" onClick={() => setPickPage(pickPage + 1)}>
-                    More kinds ›
-                  </button>
-                )}
-              </div>
-              </div>
-            )}
           </div>
         )}
 
         {stage === 'pick' && pickCat && (
-          <div className="stepbody">
-            <div className="stepmain">
+          <div className="chatcard">
             <div className="pickhead">
-              <button type="button" className="backbtn" onClick={() => { setPickCat(null); setPickPage(0); }}>
+              <button type="button" className="backbtn" onClick={() => setPickCat(null)}>
                 ‹ Kinds of case
               </button>
-              <h2 className="steptitle sm">{pickCat}</h2>
+              <h4>{pickCat}</h4>
             </div>
             <div className="pickgrid">
-              {pickItemsShown.map((m) => (
+              {pickList.map((m) => (
                 <button
                   key={m.id}
                   type="button"
@@ -1866,72 +1897,23 @@ export default function Interview() {
                 </button>
               ))}
             </div>
-            </div>
-            {pickItemPages > 1 && (
-              <div className="stepactions">
-              <div className="reviewnav">
-                {pickPage > 0 && (
-                  <button type="button" className="btn ghost" onClick={() => setPickPage(pickPage - 1)}>
-                    ‹ Earlier
-                  </button>
-                )}
-                {pickPage < pickItemPages - 1 && (
-                  <button type="button" className="btn primary" onClick={() => setPickPage(pickPage + 1)}>
-                    More documents ›
-                  </button>
-                )}
-              </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {(stage === 'fields' || stage === 'feew-fields') && currentField && (
-          <div className="stepbody qscreen">
-            <div className="stepmain">
-              {banner && <p className="stepbanner">{banner}</p>}
-              <h2 className="qtext">{currentField.label}</h2>
-              {currentField.hint && <p className="qhint">{currentField.hint}</p>}
-              {courtBadgesActive && (
-                <p className="qhint">
-                  Courts for {answers.county} County, from the court database — pick yours, or type it instead.
-                </p>
-              )}
-              {pendingCounty && <p className="steptext countyprompt">{countyPrompt}</p>}
-            </div>
-            <div className="stepactions">
-              {goBackVisible && (
-                <button type="button" className="backbtn" onClick={goBack}>‹ Back</button>
-              )}
-              {badgeButtons()}
-              {otherMode && currentField.type === 'select' && (
-                <p className="qhint">Type your own answer below — it will be used exactly as written.</p>
-              )}
-              {composer}
-            </div>
-          </div>
-        )}
-
-        {stage === 'feew-choice' && (
-          <div className="stepbody">
-            <div className="stepmain">
-              <h2 className="steptitle">One optional add-on</h2>
-              <p className="steptext">{feewPitch(subject === 'other', answers.fullName || '')}</p>
-            </div>
-            <div className="stepactions">{badgeButtons()}</div>
           </div>
         )}
 
         {stage === 'review' && (
-          <div className="stepbody">
-            <div className="stepmain">
-            <h2 className="steptitle">Check your answers</h2>
-            <p className="stepnote">
-              This is what goes into your {motion ? motion.name : 'document'}.
-              {reviewPages > 1 ? ` Page ${reviewPage + 1} of ${reviewPages}.` : ''}
-            </p>
+          <div className="chatcard">
+            <h4>
+              Check your answers
+              <HelpTip title="What happens now?">
+                <p className="hintbody">
+                  This is exactly what goes into your {motion ? motion.name : 'document'}.
+                  Read it over — if something is wrong, tap Back above the answer bar to fix
+                  it before you sign.
+                </p>
+              </HelpTip>
+            </h4>
             <div className="reviewlist">
-              {reviewShown.map((p) => (
+              {reviewPairs.map((p) => (
                 <div className="reviewrow" key={p.key}>
                   <span className="reviewq">{p.label}</span>
                   <span className="reviewa">{p.value}</span>
@@ -1944,163 +1926,155 @@ export default function Interview() {
                 <p className="steptext">Nothing to review yet.</p>
               )}
             </div>
-            </div>
-            <div className="stepactions">
-            <div className="reviewnav">
-              {reviewPage > 0 && (
-                <button type="button" className="btn ghost" onClick={() => setReviewPage(reviewPage - 1)}>
-                  ‹ Earlier answers
-                </button>
-              )}
-              {reviewPage < reviewPages - 1 ? (
-                <button type="button" className="btn primary" onClick={() => setReviewPage(reviewPage + 1)}>
-                  More answers ›
-                </button>
-              ) : (
-                <button type="button" className="btn primary" onClick={continueFromReview}>
-                  Continue to signature
-                </button>
-              )}
-            </div>
-            </div>
+            <button type="button" className="btn primary" onClick={continueFromReview}>
+              Continue to signature
+            </button>
           </div>
         )}
 
         {stage === 'signature' && (
-          <div className="stepbody">
-            <div className="stepmain">
-              <h2 className="steptitle sm">{signPrompt()}</h2>
-              <div className="sigblock">
-                <SignaturePad onChange={setSignature} />
-                {!signature && <p className="fineprint">Draw your signature to continue.</p>}
-              </div>
+          <div className="chatcard">
+            <h4>{signPrompt()}</h4>
+            <div className="sigblock">
+              <SignaturePad onChange={setSignature} />
+              {!signature && <p className="fineprint">Draw your signature to continue.</p>}
             </div>
-            <div className="stepactions">
-              <button className="btn primary" disabled={!signature} onClick={() => { say('user', '(signed)'); setStage('pay'); }}>
-                Continue to my document
-              </button>
-            </div>
+            <button
+              className="btn primary"
+              disabled={!signature}
+              onClick={() => { say('user', '(signed)'); setStage('pay'); }}
+            >
+              Continue to my document
+            </button>
           </div>
         )}
 
         {stage === 'pay' && motion && (
-          <div className="stepbody">
-            <div className="stepmain">
-            <div className="paycard">
-              <h4>{motion.name}</h4>
-              <p>{fill(motion.prayer, answers)}</p>
-              <p className="fineprint">
-                Your packet includes the motion{motion.needsProposedOrder ? ', a proposed order' : ''}{motion.needsConferenceCert ? ', a certificate of conference' : ''} and a certificate of service.
-                {feeWaiverAdded ? ' The fee-waiver request is included at no extra charge.' : ''}
-              </p>
-              {payError && <p className="error">{payError}</p>}
-              {!restoredSession && (
-                <div className="field">
-                  <label htmlFor="coupon-code">Coupon code (optional)</label>
-                  <input
-                    id="coupon-code"
-                    value={coupon}
-                    autoComplete="off"
-                    placeholder="Have a code? Enter it here"
-                    onChange={(e) => setCoupon(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') startPayment(); }}
-                  />
-                </div>
-              )}
-              <p className="fineprint">{DISCLAIMER}</p>
-            </div>
-            </div>
-            <div className="stepactions">
-              {restoredSession ? (
-                <button className="btn primary big" onClick={() => generatePdf(restoredSession)}>Download my document</button>
-              ) : (
-                <button className="btn primary big" onClick={startPayment}>
-                  {coupon.trim() ? 'Generate my document' : 'Generate my document — $3'}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {stage === 'generating' && (
-          <div className="stepbody center">
-            <div className="stepmain">
-              <p className="steptext">Preparing your document…</p>
-            </div>
+          <div className="chatcard">
+            <h4>
+              {motion.name}
+              <HelpTip title="What am I asking the court for?">
+                <p className="hintbody">{fill(motion.prayer, answers)}</p>
+              </HelpTip>
+            </h4>
+            <p className="cardsub">
+              {restoredSession
+                ? 'Your payment went through — generate your document below.'
+                : coupon.trim()
+                  ? 'Your document will be generated with the coupon applied.'
+                  : 'Your filing-ready PDF — $3, charged only when it is generated.'}
+            </p>
+            {payError && <p className="error">{payError}</p>}
+            {!restoredSession && (
+              <div className="field">
+                <label htmlFor="coupon-code">Coupon code (optional)</label>
+                <input
+                  id="coupon-code"
+                  value={coupon}
+                  autoComplete="off"
+                  placeholder="Have a code? Enter it here"
+                  onChange={(e) => setCoupon(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') startPayment(); }}
+                />
+              </div>
+            )}
+            {restoredSession ? (
+              <button className="btn primary big" onClick={() => generatePdf(restoredSession)}>Download my document</button>
+            ) : (
+              <button className="btn primary big" onClick={startPayment}>
+                {coupon.trim() ? 'Generate my document' : 'Generate my document — $3'}
+              </button>
+            )}
+            <p className="fineprint cardfoot">
+              <HelpTip title="What's included?">
+                <p className="hintbody">
+                  Your packet includes the motion{motion.needsProposedOrder ? ', a proposed order' : ''}{motion.needsConferenceCert ? ', a certificate of conference' : ''} and a certificate of service.
+                  {feeWaiverAdded ? ' The fee-waiver request is included at no extra charge.' : ''}
+                </p>
+              </HelpTip>
+              <HelpTip title="The fine print">{DISCLAIMER}</HelpTip>
+            </p>
           </div>
         )}
 
         {stage === 'done' && filing && (
-          <div className="stepbody">
-            <div className="stepmain">
-            <div className="filing">
-              {donePage === 0 && savedCaseId && (
-                <p className="savednote">
-                  Saved to your dashboard —{' '}
-                  <Link href={`/dashboard/cases/${savedCaseId}`}>view the case</Link>, where its
-                  deadlines, documents, and hearing details now live.
-                </p>
-              )}
-              <h3>{filing.heading}</h3>
-              {donePage === 0 && filing.approximate && (
-                <p className="warn">We matched your ZIP to {filing.countyName || 'your'} County approximately — double-check the county on your case paperwork before you file.</p>
-              )}
-              <ol start={donePage * DONE_PER_PAGE + 1}>
-                {doneShown.map((s, i) => (
-                  <li key={i}>
-                    <p>{s.text}</p>
-                    {s.links && (
-                      <p className="steplinks">
-                        {s.links.map((l) => (
-                          <a key={l.url} href={l.url} target="_blank" rel="noreferrer">{l.label} ↗</a>
-                        ))}
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ol>
-              {donePage === donePages - 1 && courtCard && (
-                <div className="courtcard">
-                  <h4>{courtCard.name}</h4>
-                  <p className="fineprint">Your court — contact details from the court database.</p>
-                  {courtCard.address
-                    ? <p><strong>Address:</strong> {courtCard.address}{courtCard.city ? `, ${courtCard.city}` : ''}</p>
-                    : courtCard.city
-                      ? <p><strong>City:</strong> {courtCard.city}</p>
-                      : null}
-                  {courtCard.phone && <p><strong>Phone:</strong> {courtCard.phone}</p>}
-                  {courtCard.fax && <p><strong>Fax:</strong> {courtCard.fax}</p>}
-                  {courtCard.hours && <p><strong>Hours:</strong> {courtCard.hours}</p>}
-                  {courtCard.email && <p><strong>Email:</strong> {courtCard.email}</p>}
-                  {(courtCard.efilingUrl || courtCard.website) && (
+          <div className="chatcard">
+            {savedCaseId && (
+              <p className="savednote">
+                Saved to your dashboard —{' '}
+                <Link href={`/dashboard/cases/${savedCaseId}`}>view the case</Link>, where its
+                deadlines, documents, and hearing details now live.
+              </p>
+            )}
+            <h4>{filing.heading}</h4>
+            {filing.approximate && (
+              <p className="warn">
+                We matched your ZIP to {filing.countyName || 'your'} County approximately —
+                double-check the county on your case paperwork before you file.
+              </p>
+            )}
+            <ol>
+              {doneSteps.map((s, i) => (
+                <li key={i}>
+                  <p>{s.text}</p>
+                  {s.links && (
                     <p className="steplinks">
-                      {courtCard.efilingUrl && (
-                        <a href={courtCard.efilingUrl} target="_blank" rel="noreferrer">File online (e-filing) ↗</a>
-                      )}
-                      {courtCard.website && (
-                        <a href={courtCard.website} target="_blank" rel="noreferrer">Court website ↗</a>
-                      )}
+                      {s.links.map((l) => (
+                        <a key={l.url} href={l.url} target="_blank" rel="noreferrer">{l.label} ↗</a>
+                      ))}
                     </p>
                   )}
-                </div>
-              )}
-              {donePage === donePages - 1 && (
-                <p className="fineprint">{DISCLAIMER} Court rules change — confirm fees, deadlines, and service rules with the clerk of your court.</p>
-              )}
-            </div>
-            </div>
-            <div className="stepactions">
-              {donePage < donePages - 1 ? (
-                <button type="button" className="btn primary" onClick={() => setDonePage(donePage + 1)}>
-                  Continue ›
-                </button>
-              ) : (
-                <Link className="btn" href="/library">Browse the motion library</Link>
-              )}
-            </div>
+                </li>
+              ))}
+            </ol>
+            {courtCard && (
+              <div className="courtcard">
+                <h4>{courtCard.name}</h4>
+                <p className="fineprint">Your court — contact details from the court database.</p>
+                {courtCard.address
+                  ? <p><strong>Address:</strong> {courtCard.address}{courtCard.city ? `, ${courtCard.city}` : ''}</p>
+                  : courtCard.city
+                    ? <p><strong>City:</strong> {courtCard.city}</p>
+                    : null}
+                {courtCard.phone && <p><strong>Phone:</strong> {courtCard.phone}</p>}
+                {courtCard.fax && <p><strong>Fax:</strong> {courtCard.fax}</p>}
+                {courtCard.hours && <p><strong>Hours:</strong> {courtCard.hours}</p>}
+                {courtCard.email && <p><strong>Email:</strong> {courtCard.email}</p>}
+                {(courtCard.efilingUrl || courtCard.website) && (
+                  <p className="steplinks">
+                    {courtCard.efilingUrl && (
+                      <a href={courtCard.efilingUrl} target="_blank" rel="noreferrer">File online (e-filing) ↗</a>
+                    )}
+                    {courtCard.website && (
+                      <a href={courtCard.website} target="_blank" rel="noreferrer">Court website ↗</a>
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
+            <p className="fineprint cardfoot">
+              <HelpTip title="The fine print">
+                <p className="hintbody">{DISCLAIMER}</p>
+                <p className="hintbody">
+                  Court rules change — confirm fees, deadlines, and service rules with the
+                  clerk of your court.
+                </p>
+              </HelpTip>
+            </p>
+            <Link className="btn" href="/library">Browse the motion library</Link>
           </div>
         )}
       </div>
+
+      {!dockEmpty && (
+        <div className="chatdock">
+          {goBackVisible && (
+            <button type="button" className="backbtn" onClick={goBack}>‹ Back</button>
+          )}
+          {badgeButtons()}
+          {dockHasComposer && composer}
+        </div>
+      )}
     </div>
   );
 }

@@ -30,7 +30,7 @@ export interface MotionField {
    *  field with no statement renders its answer alone. */
   statement?: string;
   hint?: string;
-  type?: 'text' | 'date' | 'textarea' | 'select';
+  type?: 'text' | 'date' | 'textarea' | 'select' | 'phone';
   options?: string[];
   required?: boolean;
 }
@@ -79,7 +79,7 @@ export interface MotionDef {
 export const SHARED_FIELDS: MotionField[] = [
   { key: 'fullName', label: 'What is your full legal name?', required: true },
   { key: 'address', label: 'What is your mailing address?', required: true },
-  { key: 'phone', label: 'What is your phone number?', required: true },
+  { key: 'phone', label: 'What is your phone number?', type: 'phone', required: true },
   { key: 'email', label: 'What is your email address?', required: true },
   {
     key: 'filerRole',

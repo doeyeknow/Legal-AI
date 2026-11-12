@@ -147,10 +147,9 @@ main { max-width: 860px; margin: 0 auto; padding: 20px 16px 40px; position: rela
 .card .prose-note { font-size: 12.5px; font-style: italic; }
 
 /* Inputs that are not boxes: a label above, one bottom line, and
-   an accent line that grows along it on focus. Applies to the
-   chat composer and every .field on the site. */
-.field input, .field select, .field textarea,
-.composerrow input, .composerrow textarea {
+   an accent line that grows along it on focus. Applies to every
+   .field on the site. */
+.field input, .field select, .field textarea {
   font-family: inherit; font-size: 16px; color: var(--ink);
   padding: 9px 2px; border: none; border-bottom: 1px solid var(--fieldline);
   border-radius: 0; background-color: transparent;
@@ -159,54 +158,175 @@ main { max-width: 860px; margin: 0 auto; padding: 20px 16px 40px; position: rela
   transition: background-size 0.25s ease;
 }
 .field input, .field select, .field textarea { width: 100%; }
-.composerrow input, .composerrow textarea { flex: 1 1 auto; min-width: 0; }
-.field input:focus, .field select:focus, .field textarea:focus,
-.composerrow input:focus, .composerrow textarea:focus {
+.field input:focus, .field select:focus, .field textarea:focus {
   outline: none; background-size: 100% 2px;
 }
 ::placeholder { color: #848B99; opacity: 1; }
 
-/* Interview — a full-height chat: the thread scrolls above a
-   composer dock fixed to the bottom of the screen. */
-.interviewpage {
-  display: flex; flex-direction: column;
-  margin: -20px -16px -40px;
-  height: calc(100vh - var(--headh));
-  height: calc(100dvh - var(--headh));
-}
-.chatbar { padding: 12px 18px 6px; flex: none; }
-.chatbar h1 { font-size: 20px; margin: 0 0 2px; }
-.chatbar .fineprint { margin: 0; }
+/* Interview — a full-height chat: the whole conversation as
+   bubbles in a scrolling thread, with a composer dock pinned to
+   the bottom of the screen. */
+.chatpage { height: 100%; display: flex; flex-direction: column; }
 
-.chatshell { flex: 1; min-height: 0; display: flex; flex-direction: column; background: rgba(11, 14, 20, 0.55); }
 .chatlog {
-  flex: 1; min-height: 0; overflow-y: auto; width: 100%; max-width: 860px; margin: 0 auto;
-  padding: 16px; display: flex; flex-direction: column; gap: 10px;
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  width: 100%; max-width: 820px; margin: 0 auto;
+  padding: 16px 14px 10px; display: flex; flex-direction: column; gap: 10px;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
 }
-.msg { max-width: 85%; font-size: 15.5px; white-space: pre-wrap; }
-.msg.bot { align-self: flex-start; padding: 2px; max-width: 94%; }
+.chatlog::-webkit-scrollbar { width: 5px; }
+.chatlog::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+
+.msgrow { display: flex; gap: 8px; align-items: flex-end; }
+.msgrow.user { justify-content: flex-end; }
+.botface {
+  flex: none; width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: linear-gradient(145deg, #2A3145, #171C28);
+  border: 1px solid var(--line); color: var(--gold);
+  margin-bottom: 2px;
+}
+.msg { max-width: 85%; font-size: 15.5px; line-height: 1.5; white-space: pre-wrap; }
+.msg.bot {
+  background: var(--bot); border: 1px solid var(--line); color: var(--ink);
+  padding: 10px 14px; border-radius: 16px; border-bottom-left-radius: 5px;
+}
 .msg.user {
-  background: var(--goldtint); color: #F3EDDA; align-self: flex-end;
-  border: 1px solid rgba(217, 166, 46, 0.38);
-  padding: 10px 13px; border-radius: 12px; border-bottom-right-radius: 3px;
+  background: linear-gradient(160deg, #E2AC33, #C7901F); color: #171106;
+  padding: 10px 14px; border-radius: 16px; border-bottom-right-radius: 5px;
+  font-weight: 500;
 }
+.msg.bot .qhint { margin: 8px 0 0; }
+.qbubble { font-size: 17px; font-weight: 600; }
+
+/* "Working…" indicator while the document is prepared. */
+.msg.typing { display: flex; gap: 5px; align-items: center; padding: 14px 16px; }
+.msg.typing span {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--ink2);
+  animation: typblink 1.2s ease-in-out infinite;
+}
+.msg.typing span:nth-child(2) { animation-delay: 0.2s; }
+.msg.typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typblink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
 
 .chatdock {
   flex: none; border-top: 1px solid var(--line);
-  background: rgba(11, 14, 20, 0.92); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  background: rgba(11, 14, 20, 0.92);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 8px;
 }
-.chatdock .composer, .chatdock .badgerow { max-width: 860px; margin: 0 auto; }
-.composer .progress { margin: 0 0 6px; font-size: 13px; color: var(--ink2); }
-.composerrow { display: flex; gap: 10px; align-items: flex-end; }
-.composerrow .btn { margin: 0 0 2px; flex: none; }
+.chatdock .backbtn { align-self: flex-start; padding: 2px 4px; }
+.chatdock .badgerail { padding: 0 2px; }
+
+/* Composer: one pill with the input, mic, and a round send. */
+.stepcomposer { padding: 0; border: none; }
+.composerrow {
+  display: flex; gap: 8px; align-items: center;
+  background: var(--card); border: 1px solid var(--fieldline);
+  border-radius: 24px; padding: 6px 6px 6px 14px;
+}
+.composerrow input, .composerrow textarea {
+  flex: 1 1 auto; min-width: 0; font-family: inherit; font-size: 16px;
+  color: var(--ink); background: transparent; border: none; outline: none;
+  padding: 8px 0; resize: none;
+}
+.composericon {
+  flex: none; width: 38px; height: 38px; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; padding: 0;
+  background: rgba(236, 236, 241, 0.06); border: 1px solid var(--fieldline);
+  color: var(--ink2); font-family: inherit;
+}
+.composericon:hover { color: var(--ink); }
+.composericon.listening { background: #b3261e; border-color: #b3261e; color: #fff; }
+.sendbtn {
+  flex: none; width: 38px; height: 38px; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer; border: none;
+  background: var(--gold); color: var(--goldink);
+}
+.sendbtn:hover { filter: brightness(1.08); }
+
+/* The "?" chip: longer explanations live behind it in a modal. */
+.helptip {
+  display: inline-grid; place-items: center; vertical-align: middle;
+  width: 20px; height: 20px; border-radius: 50%; margin-left: 6px; padding: 0;
+  background: rgba(217, 166, 46, 0.14); border: 1px solid rgba(217, 166, 46, 0.45);
+  color: var(--gold); cursor: pointer;
+}
+.helptip:hover { background: rgba(217, 166, 46, 0.25); }
+.hintbody { margin: 0 0 10px; font-size: 14.5px; line-height: 1.55; color: var(--ink); }
+.hintbody:last-child { margin-bottom: 0; }
+.modalbody .warn { margin: 0; font-size: 14px; }
+
+/* Stage cards inside the thread (forms, review, pay, filing). */
+.chatcard {
+  align-self: stretch; max-width: 640px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 16px; border-bottom-left-radius: 5px;
+  padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.chatcard h4 {
+  margin: 0; font-size: 17px; display: flex; align-items: center;
+  gap: 2px; flex-wrap: wrap;
+}
+.cardsub { margin: 0; color: var(--ink2); font-size: 14.5px; line-height: 1.5; }
+.cardfoot { margin: 0; display: flex; gap: 12px; align-items: center; }
+
+/* Calendar date picker (components/DatePicker.tsx). */
+.calwrap { user-select: none; -webkit-user-select: none; }
+.calhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.calnav {
+  width: 36px; height: 36px; border-radius: 10px; cursor: pointer;
+  background: rgba(236, 236, 241, 0.05); border: 1px solid var(--fieldline);
+  color: var(--ink); font-size: 20px; line-height: 1; font-family: inherit;
+}
+.caltitle { display: flex; align-items: center; gap: 8px; font-size: 17px; }
+.calyear {
+  font-family: inherit; font-size: 15px; color: var(--ink);
+  background: var(--bot); border: 1px solid var(--fieldline);
+  border-radius: 8px; padding: 4px 6px;
+}
+.caldow {
+  display: grid; grid-template-columns: repeat(7, 1fr); text-align: center;
+  font-size: 12px; color: var(--ink2); font-weight: bold; margin-bottom: 4px;
+}
+.calgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.calday {
+  aspect-ratio: 1; display: grid; place-items: center; border-radius: 50%;
+  background: none; border: none; color: var(--ink);
+  font-family: inherit; font-size: 15px; cursor: pointer; padding: 0;
+}
+.calday:hover { background: rgba(236, 236, 241, 0.08); }
+.calday.empty { pointer-events: none; }
+.calday.today { box-shadow: inset 0 0 0 1.5px var(--gold); }
+.calday.sel { background: var(--gold); color: var(--goldink); font-weight: bold; }
+
+/* Home: the two "?" chips sit together on one line under the price. */
+.homerow { display: flex; gap: 16px; justify-content: center; align-items: center; margin: 2px 0 0; }
+
+/* Phone dial pad (components/DialPad.tsx) — round keys like a
+ *  phone keypad, sitting above the composer pill. */
+.dialpad {
+  display: grid; grid-template-columns: repeat(3, 68px);
+  justify-content: center; gap: 10px;
+  padding: 12px 0 4px;
+  user-select: none; -webkit-user-select: none;
+}
+.dialkey {
+  width: 68px; height: 68px; border-radius: 50%;
+  background: var(--bot); border: 1px solid var(--fieldline);
+  color: var(--ink); font-family: inherit; font-size: 22px;
+  display: grid; place-items: center; cursor: pointer; padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.dialkey:hover { border-color: var(--gold); }
+.dialkey:active { background: var(--gold); color: var(--goldink); }
+@media (max-width: 420px) {
+  .dialpad { grid-template-columns: repeat(3, 60px); gap: 8px; }
+  .dialkey { width: 60px; height: 60px; font-size: 20px; }
+}
 
 /* Quick answers: one line of badges, sideways scroll, no wrap. */
-.badgerow {
-  display: flex; gap: 8px; overflow-x: auto; flex-wrap: nowrap;
-  padding: 2px 0 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch;
-}
-.badgerow::-webkit-scrollbar { display: none; }
 .badge {
   flex: none; font-family: inherit; font-size: 14.5px; padding: 8px 15px;
   border-radius: 999px; border: 1px solid var(--fieldline); background: var(--card);
@@ -538,14 +658,18 @@ main:has(.apphome) { padding: 6px 12px; display: flex; flex-direction: column; }
 .libhonest { margin-top: 34px; border-top: 1px solid var(--line); padding-top: 16px; }
 .libfine { margin-top: 18px; padding-bottom: 10px; }
 
-/* ---- Step-screen interview ---- */
-.stepshell { flex: 1; min-height: 0; display: flex; flex-direction: column; background: rgba(11, 14, 20, 0.55); }
+/* ---- Chat interview: header + thread + dock ---- */
 .stephead {
   flex: none; display: flex; align-items: center; gap: 10px;
   padding: 7px 12px; border-bottom: 1px solid var(--line);
-  background: rgba(11, 14, 20, 0.9); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  background: rgba(11, 14, 20, 0.9);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
-.stephead .homelink { color: var(--gold); text-decoration: none; font-size: 14px; flex: none; padding: 6px 2px; }
+.stephead .homelink {
+  color: var(--gold); text-decoration: none; font-size: 20px; flex: none;
+  padding: 2px 8px; border-radius: 8px; line-height: 1;
+}
+.stephead .homelink:hover { background: rgba(217, 166, 46, 0.12); }
 .stepmotion {
   flex: 1 1 auto; min-width: 0; font-weight: bold; font-size: 14.5px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -560,61 +684,7 @@ main:has(.apphome) { padding: 6px 12px; display: flex; flex-direction: column; }
 .voicestrip .btn { margin: 0; }
 .voicestrip .voicenote { flex-basis: 100%; }
 
-.stepscreen {
-  flex: 1; min-height: 0; overflow: hidden;
-  width: 100%; max-width: 860px; margin: 0 auto;
-  display: flex; flex-direction: column;
-  animation: stepin 0.22s ease-out;
-}
-@keyframes stepin {
-  from { opacity: 0; transform: translateX(14px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-.stepbody {
-  flex: 1; min-height: 0; display: flex; flex-direction: column;
-  padding: 16px 16px calc(14px + env(safe-area-inset-bottom));
-  overflow: hidden;
-}
-.stepbody.center { align-items: center; justify-content: center; text-align: center; }
-
-/* Step layout rule (one mechanism for every stage): the page and
-   body NEVER scroll; a step's CONTENT region (.stepmain) scrolls
-   internally when — and only when — its content overflows the
-   stage, while the step's controls (.stepactions: Back / Continue
-   / primary action, the options rail, the composer) stay pinned
-   outside the scroll region, always visible and tappable. */
-.stepmain {
-  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
-  overscroll-behavior: contain; display: flex; flex-direction: column;
-  scrollbar-width: thin;
-}
-.stepbody.center .stepmain { justify-content: center; align-items: center; }
-.stepactions {
-  flex: none; display: flex; flex-direction: column; gap: 10px;
-  padding-top: 10px;
-}
-.stepactions .reviewnav { margin-top: 0; }
-
-.stepkicker {
-  margin: 0 0 2px; font-size: 12.5px; letter-spacing: 0.12em;
-  text-transform: uppercase; color: var(--gold); font-weight: bold;
-}
-.steptitle { font-size: 23px; line-height: 1.25; margin: 0 0 10px; }
-.steptitle.sm { font-size: 19px; }
-.steptext { font-size: 16.5px; line-height: 1.5; margin: 0 0 10px; }
-.stepnote { font-size: 14px; color: var(--ink2); line-height: 1.5; margin: 0 0 10px; }
-.stepbody .warn { margin: 0 0 12px; font-size: 14px; }
-.stepbanner {
-  font-size: 13.5px; color: var(--ink2); font-style: italic; margin: 0 0 10px;
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-}
-.stepfoot { margin-top: auto; }
-
-/* Selectable options: ONE single-line horizontal rail of badges.
-   No wrapping; chips never shrink below readable size; the rail
-   scrolls sideways. A horizontal pan moves the rail, a vertical
-   pan still drives the step's vertical scroll region — the two
-   axes do not fight (touch-action: pan-x pan-y). */
+/* Quick-answer rail: one line of chips, sideways scroll. */
 .badgerail {
   display: flex; flex-wrap: nowrap; gap: 8px;
   overflow-x: auto; overflow-y: hidden;
@@ -629,84 +699,274 @@ main:has(.apphome) { padding: 6px 12px; display: flex; flex-direction: column; }
   border-color: var(--gold); background: rgba(217, 166, 46, 0.2);
   color: #fff; font-weight: 600;
 }
-
-/* Question screens */
-.qscreen .qtext { font-size: 21px; line-height: 1.35; margin: 0 0 6px; }
-.qhint { font-size: 14px; color: var(--ink2); margin: 0 0 10px; line-height: 1.45; }
-.countyprompt { font-weight: bold; }
-.stepcomposer { border-top: 1px solid var(--line); padding-top: 10px; }
 .backbtn {
   align-self: flex-start; background: none; border: none; color: var(--gold);
   font-family: inherit; font-size: 14.5px; cursor: pointer; padding: 4px 4px 8px 0;
 }
+.qhint { font-size: 14px; color: var(--ink2); margin: 0 0 10px; line-height: 1.45; }
+.steptext { font-size: 16.5px; line-height: 1.5; margin: 0 0 10px; }
+.stepkicker {
+  margin: 0 0 2px; font-size: 12.5px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--gold); font-weight: bold;
+}
+.stepcomposer { border-top: none; padding: 0; }
 
-/* Pick drill-down */
+/* Pick drill-down + review list (inside chat cards). */
 .catgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
 .catitem {
   display: flex; flex-direction: column; gap: 2px; text-align: left;
-  background: var(--card); color: var(--ink); border: 1px solid var(--line);
+  background: var(--bot); color: var(--ink); border: 1px solid var(--line);
   border-radius: 12px; padding: 14px; font-family: inherit; cursor: pointer;
   position: relative; overflow: hidden; min-height: 76px; justify-content: center;
 }
 .catitem strong { font-size: 16.5px; }
 .catitem span { font-size: 13px; color: var(--ink2); }
+.catitem > svg { color: var(--gold); }
 .pickhead { display: flex; align-items: center; gap: 8px; }
-.pickhead .steptitle { margin: 0 0 8px; }
+.pickhead .backbtn { padding: 4px 8px 4px 0; }
+.pickhead h4 { margin: 0; }
 .pickgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.pickgrid .pickitem { margin: 0; border-radius: 12px; padding: 10px 12px; }
-.pickgrid .pickitem strong { font-size: 14.5px; line-height: 1.3; display: block; }
-.pickgrid .pickitem span {
-  font-size: 12px; line-height: 1.35; margin-top: 3px;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+.pickitem {
+  display: block; width: 100%; text-align: left; background: var(--bot);
+  color: var(--ink); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px; margin: 0; font-family: inherit; cursor: pointer;
+  position: relative; overflow: hidden;
 }
+.pickitem span { display: block; font-size: 12px; color: var(--ink2); line-height: 1.35; margin-top: 3px; }
 
-/* Subject screen: the profile form, compact enough to fit whole. */
-.stepbody .subjectcard { padding: 13px 14px; }
-.stepbody .subjectcard h4 { margin-bottom: 4px; font-size: 16px; }
-.stepbody .subjectcard .formgrid { grid-template-columns: 1fr 1fr; gap: 7px 12px; margin: 8px 0 4px; }
-.stepbody .subjectcard .field { gap: 1px; }
-.stepbody .subjectcard .field label { font-size: 12px; }
-.stepbody .subjectcard .field input { padding: 5px 2px; }
-.stepbody .subjectcard .checkrow { margin: 6px 0; font-size: 13.5px; }
-.stepbody .gatecard { padding: 14px; }
-
-/* Review screen: dense pairs, clamped so a page always fits. */
 .reviewlist { display: flex; flex-direction: column; margin: 2px 0 10px; }
 .reviewrow {
   display: flex; flex-direction: column; gap: 0;
   padding: 6px 0; border-bottom: 1px solid var(--line);
 }
-.reviewq {
-  font-size: 11.5px; color: var(--ink2); line-height: 1.3;
-  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+.reviewq { font-size: 11.5px; color: var(--ink2); line-height: 1.3; }
+.reviewa { font-size: 14.5px; line-height: 1.35; }
+
+/* ============================================================
+   FINDER DASHBOARD — a macOS-style window: chrome bar with
+   traffic lights, a translucent sidebar of folders, and the
+   selected view beside it. Fills the app shell's content region;
+   the window's own areas manage their overflow.
+   ============================================================ */
+main:has(.finderwin) { overflow: hidden; padding: 0; max-width: none; }
+.finderwin {
+  height: 100%; display: flex; flex-direction: column;
+  background: rgba(11, 14, 20, 0.55);
+  border: 1px solid var(--line); border-bottom: none;
 }
-.reviewa {
-  font-size: 14.5px; line-height: 1.35;
+.finderchrome {
+  flex: none; display: flex; align-items: center; gap: 12px;
+  height: 40px; padding: 0 12px;
+  background: rgba(20, 24, 34, 0.92);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+.trafficlights { display: inline-flex; gap: 7px; flex: none; }
+.trafficlights i {
+  width: 12px; height: 12px; border-radius: 50%; display: block;
+  background: #FF5F57; border: 0.5px solid rgba(0, 0, 0, 0.25);
+}
+.trafficlights i:nth-child(2) { background: #FEBC2E; }
+.trafficlights i:nth-child(3) { background: #28C840; }
+.findertitle {
+  flex: 1; text-align: center; font-weight: bold; font-size: 14.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.findertoggle {
+  flex: none; width: 32px; height: 32px; border-radius: 8px; padding: 0;
+  display: none; place-items: center; cursor: pointer;
+  background: rgba(236, 236, 241, 0.06); border: 1px solid var(--line); color: var(--ink2);
+}
+.finderbody { flex: 1; min-height: 0; display: flex; position: relative; }
+
+/* Sidebar */
+.finderside {
+  flex: none; width: 208px; overflow-y: auto;
+  background: rgba(16, 19, 27, 0.85);
+  border-right: 1px solid var(--line);
+  padding: 10px 8px 14px;
+  display: flex; flex-direction: column; gap: 1px;
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.sidesection {
+  margin: 12px 8px 4px; font-size: 11px; font-weight: bold;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sideitem {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 9px; border-radius: 8px; text-decoration: none;
+  color: var(--ink); font-size: 13.5px; line-height: 1.3;
+  white-space: nowrap; overflow: hidden;
+}
+.sideitem svg { color: var(--gold); flex: none; }
+.sideitem:hover { background: rgba(236, 236, 241, 0.06); }
+.sideitem.active { background: rgba(217, 166, 46, 0.16); color: #fff; }
+.sidefoot {
+  margin: auto 8px 0; padding-top: 16px; font-size: 11.5px;
+  color: var(--ink2); line-height: 1.4; border-top: 1px solid var(--line);
+}
+.finderscrim { display: none; }
+
+/* Content region */
+.findercontent {
+  flex: 1; min-width: 0; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.findercontent::-webkit-scrollbar { width: 6px; }
+.findercontent::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+.dashpage { padding: 18px 18px 28px; max-width: 900px; }
+.findercontent .dashpage h1 { margin-top: 0; }
+
+/* Case folders — Finder icon view. */
+.foldergrid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 10px; margin: 12px 0 4px;
+}
+.ctxwrap.foldertile { position: relative; }
+.foldertile .ctxbtn { top: 2px; right: 2px; }
+.folderlink {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 10px 8px 12px; border-radius: 12px; text-decoration: none;
+  color: var(--ink); text-align: center; position: relative;
+}
+.folderlink:hover { background: rgba(236, 236, 241, 0.05); }
+.macfolder { width: 62px; height: 50px; }
+.macfolder .folderback { fill: #3E76C6; }
+.macfolder .folderfront { fill: #5A96DD; }
+.macfolder.open .folderback { fill: #2F5FA3; }
+.macfolder.open .folderfront { fill: #4E86CF; }
+.foldername {
+  font-size: 13px; font-weight: 600; line-height: 1.3; max-width: 100%;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.reviewnav { margin-top: auto; display: flex; gap: 8px; }
-.reviewnav .btn { flex: 1; text-align: center; margin: 0; padding: 12px 10px; }
+.foldersub { font-size: 11.5px; color: var(--ink2); line-height: 1.3; }
+.foldersub.due { color: var(--gold); font-weight: 600; }
 
-/* Signature + pay inside the stage */
-.stepbody .sigblock { gap: 10px; }
-.stepbody .paycard { padding: 14px; }
-.stepbody .paycard .field { margin: 10px 0; }
-
-/* Done screen: filing steps, paginated by the component */
-.stepbody .filing { padding: 14px 16px; }
-.stepbody .filing h3 { margin: 0 0 8px; font-size: 19px; }
-.stepbody .filing li { margin-bottom: 10px; }
-
-/* Step screens under reduced motion: no slide, content as-is. */
-@media (prefers-reduced-motion: reduce) {
-  .stepscreen { animation: none !important; }
+/* Mail banner at the top of the cases view. */
+.mailbanner {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 14px; text-decoration: none; color: var(--ink);
+}
+.mailicon {
+  flex: none; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center;
+  background: rgba(217, 166, 46, 0.12); border: 1px solid rgba(217, 166, 46, 0.35); color: var(--gold);
+}
+.mailtexts { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.mailtexts strong { font-size: 15px; }
+.mailtexts > span > span { display: block; }
+.mailbanner .statuspill { margin-left: auto; flex: none; }
+.finder-notice {
+  margin: 0 0 12px; padding: 9px 12px; border-radius: 10px; font-size: 14px;
+  background: rgba(217, 166, 46, 0.12); border: 1px solid rgba(217, 166, 46, 0.4);
 }
 
-/* Very short screens: tighten the question type a step. */
-@media (max-height: 660px) {
-  .qscreen .qtext { font-size: 19px; }
-  .steptitle { font-size: 21px; }
-  .stepbody { padding-top: 12px; }
+/* Evidence locker file rows. */
+.evidencelist { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.filerow {
+  display: flex; align-items: center; gap: 12px; position: relative;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 12px;
+}
+.filerow .fileicon {
+  flex: none; width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center;
+  background: rgba(236, 236, 241, 0.05); color: var(--ink2);
+}
+.filerow .filetexts { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.filerow .filetexts strong { font-size: 14.5px; }
+.filerow .ctxbtn { top: 50%; right: 6px; transform: translateY(-50%); }
+
+/* The "..." menu button. */
+.ctxbtn {
+  position: absolute; top: 4px; right: 4px; z-index: 2;
+  width: 28px; height: 28px; border-radius: 50%; padding: 0;
+  display: grid; place-items: center; cursor: pointer;
+  background: rgba(11, 14, 20, 0.6); border: 1px solid var(--line); color: var(--ink2);
+  opacity: 0; transition: opacity 0.15s ease;
+}
+.ctxwrap:hover .ctxbtn, .ctxwrap:focus-within .ctxbtn, .ctxbtn:focus { opacity: 1; }
+@media (hover: none) { .ctxbtn { opacity: 0.7; } }
+
+/* The context menu itself (components/ContextMenu.tsx). */
+.ctxbackdrop { position: fixed; inset: 0; z-index: 80; }
+.ctxmenu {
+  position: fixed; min-width: 210px; padding: 5px; z-index: 81;
+  background: rgba(28, 33, 46, 0.98);
+  border: 1px solid var(--fieldline); border-radius: 12px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+}
+.ctxitem {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 9px 10px; border-radius: 8px; border: none; text-align: left;
+  background: none; color: var(--ink); font-family: inherit; font-size: 14px; cursor: pointer;
+}
+.ctxitem svg { color: var(--ink2); }
+.ctxitem:hover { background: var(--gold); color: var(--goldink); }
+.ctxitem:hover svg { color: var(--goldink); }
+.ctxitem.danger { color: var(--err); }
+.ctxitem.danger svg { color: var(--err); }
+.ctxitem.danger:hover { background: #b3261e; color: #fff; }
+.ctxitem.danger:hover svg { color: #fff; }
+
+/* Properties modal rows. */
+.proprows { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; }
+.proprows dt { font-size: 13px; color: var(--ink2); }
+.proprows dd { margin: 0; font-size: 14.5px; }
+
+/* Calendar view (components/CalendarView.tsx). */
+.calview-head { display: flex; align-items: center; gap: 8px; }
+.calview-head .btn { margin: 0; }
+.calview-title { flex: 1; margin: 0; font-size: 19px; }
+.calview-dow {
+  display: grid; grid-template-columns: repeat(7, 1fr); margin-top: 12px;
+  font-size: 11.5px; font-weight: bold; color: var(--ink2); text-align: right; padding: 0 8px;
+}
+.calview-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; padding: 0 4px;
+}
+.calview-day {
+  position: relative; min-height: 52px; border-radius: 10px; padding: 6px 8px;
+  background: var(--card); border: 1px solid var(--line);
+  font-family: inherit; color: var(--ink); text-align: left; cursor: pointer;
+}
+.calview-day.dim { opacity: 0.4; }
+.calview-day:hover { border-color: var(--fieldline); }
+.calview-day.sel { border-color: var(--gold); background: rgba(217, 166, 46, 0.08); }
+.calview-day.today .calview-num { color: var(--gold); font-weight: bold; }
+.calview-num { font-size: 13px; }
+.calview-dot {
+  position: absolute; left: 8px; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gold); box-shadow: 0 0 0 2px rgba(217, 166, 46, 0.2);
+}
+@media (max-width: 560px) {
+  .calview-day { min-height: 42px; padding: 4px 6px; }
+  .calview-dot { width: 5px; height: 5px; }
+}
+
+/* Finder on phones: the sidebar becomes an overlay opened from
+   the chrome bar's toggle; the window drops its border radii. */
+@media (max-width: 760px) {
+  .finderside {
+    position: absolute; z-index: 20; top: 0; bottom: 0; left: 0;
+    transform: translateX(-100%); transition: transform 0.2s ease;
+    background: rgba(13, 16, 23, 0.97);
+  }
+  .finderside.open { transform: none; box-shadow: 14px 0 40px rgba(0, 0, 0, 0.5); }
+  .finderside.open ~ .finderscrim {
+    display: block; position: absolute; inset: 0; z-index: 10;
+    background: rgba(4, 6, 10, 0.5);
+  }
+  .findertoggle { display: grid; }
+  .dashpage { padding: 14px 12px 24px; }
+  .foldergrid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+  .mailbanner .statuspill { margin-left: 0; }
+  .mailtexts > span:last-child { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .finderside { transition: none; }
 }
 
 /* Line-illustration icons (components/icons.tsx) — sized to the

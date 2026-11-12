@@ -203,6 +203,12 @@ export function ensureSchema(): Promise<void> {
       await query(
         `ALTER TABLE documents ADD COLUMN IF NOT EXISTS case_facts JSONB`,
       );
+      // Optional display name the user can give a document (the
+      // evidence locker and case page show it instead of / before
+      // the motion's catalog name).
+      await query(
+        `ALTER TABLE documents ADD COLUMN IF NOT EXISTS label TEXT`,
+      );
       await query(`CREATE TABLE IF NOT EXISTS inbound_messages (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID REFERENCES users(id) ON DELETE CASCADE,

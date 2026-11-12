@@ -18,6 +18,9 @@ import { APPEARANCE_PLATFORMS, CASE_STATUSES, COMM_METHODS } from '@/lib/dashboa
 import { DEADLINE_TYPES, deadlineType } from '@/lib/comm-templates';
 import { PORTALS, portalByKey } from '@/lib/portals';
 import { getMotion } from '@/lib/motions/match';
+import ContextMenu, { type CtxAction } from './ContextMenu';
+import { Icon } from './icons';
+import { documentPdfUrl, downloadPdf, printPdf, shareDocument } from './finderActions';
 
 function fmtDate(iso: string): string {
   const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
@@ -138,7 +141,7 @@ function CaseSections({
         </div>
       )}
 
-      <DocumentsSection data={data} />
+      <DocumentsSection data={data} reload={reload} />
       <DeadlinesSection data={data} setData={setData} />
       <AppearanceSection data={data} setData={setData} />
       <CommsSection data={data} setData={setData} />
@@ -148,26 +151,97 @@ function CaseSections({
   );
 }
 
-function DocumentsSection({ data }: { data: CaseDetailT }) {
+function DocumentsSection({ data, reload }: { data: CaseDetailT; reload: () => void }) {
+  const [renaming, setRenaming] = useState<CaseDetailT['documents'][number] | null>(null);
+  const [renameTo, setRenameTo] = useState('');
+  const [trashing, setTrashing] = useState<CaseDetailT['documents'][number] | null>(null);
+  const [props, setProps] = useState<CaseDetailT['documents'][number] | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), 2400);
+    return () => clearTimeout(t);
+  }, [notice]);
+
+  async function renameDoc() {
+    if (!renaming || !renameTo.trim()) return;
+    setBusy(true);
+    try {
+      await fetch(
+        `/api/cases/${encodeURIComponent(data.id)}/documents/${encodeURIComponent(renaming.id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label: renameTo.trim() }),
+        },
+      );
+      setRenaming(null);
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function trashDoc() {
+    if (!trashing) return;
+    setBusy(true);
+    try {
+      await fetch(
+        `/api/cases/${encodeURIComponent(data.id)}/documents/${encodeURIComponent(trashing.id)}`,
+        { method: 'DELETE' },
+      );
+      setTrashing(null);
+      setNotice('Document moved to the trash.');
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function docActions(d: CaseDetailT['documents'][number]): CtxAction[] {
+    const url = documentPdfUrl(data.id, d.id);
+    return [
+      { label: 'Download', icon: 'download', onSelect: () => downloadPdf(url) },
+      { label: 'Print', icon: 'printer', onSelect: () => { void printPdf(url); } },
+      {
+        label: 'Share', icon: 'share',
+        onSelect: () => {
+          void shareDocument(d.label || d.motionName, url).then((r) => {
+            setNotice(r === 'copied' ? 'Link copied.' : r === 'failed' ? 'Sharing is not available here.' : null);
+          });
+        },
+      },
+      { label: 'Rename', icon: 'pencil', onSelect: () => { setRenaming(d); setRenameTo(d.label || d.motionName); } },
+      { label: 'Properties', icon: 'info', onSelect: () => setProps(d) },
+      { label: 'Trash', icon: 'trash', danger: true, onSelect: () => setTrashing(d) },
+    ];
+  }
+
   return (
     <section className="dashsection">
       <h2>Documents</h2>
-      {data.documents.length === 0 ? (
+      {notice && <p className="finder-notice" role="status">{notice}</p>}
+      {data.documents.length === 0 && (
         <p>
           No documents yet. Documents you prepare in the{' '}
           <Link href="/interview">interview</Link> while signed in are filed here automatically.
         </p>
-      ) : (
+      )}
+      {data.documents.length > 0 && (
         <ul className="doclist">
           {data.documents.map((d) => (
-            <li key={d.id} className="docitem">
-              <span>
-                <strong>{d.motionName}</strong>
-                {d.feeWaiver ? ' (with fee waiver)' : ''} — prepared {fmtDate(d.createdAt)}
-              </span>
-              <a className="btn small" href={`/api/cases/${data.id}/documents/${d.id}/pdf`}>
-                Re-download PDF
-              </a>
+            <li key={d.id}>
+              <ContextMenu actions={docActions(d)} menuLabel={`Menu for ${d.label || d.motionName}`} className="filerow">
+                <span className="fileicon" aria-hidden="true"><Icon name="doc" size={24} /></span>
+                <span className="filetexts">
+                  <strong>{d.label || d.motionName}</strong>
+                  <span className="fineprint">
+                    {d.motionName}{d.feeWaiver ? ' · with fee waiver' : ''} — prepared {fmtDate(d.createdAt)}
+                  </span>
+                </span>
+              </ContextMenu>
             </li>
           ))}
         </ul>
@@ -178,6 +252,42 @@ function DocumentsSection({ data }: { data: CaseDetailT }) {
           stored, so a regenerated copy has a blank signature line — sign the printed copy the
           way you signed the original.
         </p>
+      )}
+      {renaming && (
+        <Modal title="Rename document" onClose={() => setRenaming(null)}>
+          <div className="field">
+            <label htmlFor="cd-name">Document name</label>
+            <input id="cd-name" value={renameTo} onChange={(e) => setRenameTo(e.target.value)} />
+          </div>
+          <div className="choices">
+            <button className="btn primary" disabled={busy || !renameTo.trim()} onClick={renameDoc}>Rename</button>
+            <button className="btn ghost" onClick={() => setRenaming(null)}>Cancel</button>
+          </div>
+        </Modal>
+      )}
+      {trashing && (
+        <Modal title="Move to trash" onClose={() => setTrashing(null)}>
+          <p>
+            Move “{trashing.label || trashing.motionName}” to the trash? The case is kept —
+            only this document is removed. This cannot be undone.
+          </p>
+          <div className="choices">
+            <button className="btn" style={{ background: '#b3261e', borderColor: '#b3261e', color: '#fff' }} disabled={busy} onClick={trashDoc}>
+              <Icon name="trash" size={15} /> Move to trash
+            </button>
+            <button className="btn ghost" onClick={() => setTrashing(null)}>Cancel</button>
+          </div>
+        </Modal>
+      )}
+      {props && (
+        <Modal title="Document properties" onClose={() => setProps(null)}>
+          <dl className="proprows">
+            <dt>Name</dt><dd>{props.label || props.motionName}</dd>
+            <dt>Motion</dt><dd>{props.motionName}</dd>
+            <dt>Prepared</dt><dd>{fmtDateTime(props.createdAt)}</dd>
+            <dt>Fee waiver</dt><dd>{props.feeWaiver ? 'Included' : 'No'}</dd>
+          </dl>
+        </Modal>
       )}
     </section>
   );

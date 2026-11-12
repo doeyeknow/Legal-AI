@@ -6,8 +6,9 @@ import { Icon, type IconName } from './icons';
 
 /** Native-app bottom tab bar: Home, Library, the interview
  *  (center, raised and gold — it is the point of the app), My
- *  Cases, Account. Hidden during the interview itself, where the
- *  step screens own the whole display. */
+ *  Cases, Account. Hidden during the interview itself, and on
+ *  the dashboard, where the Finder window's sidebar owns
+ *  navigation. */
 const TABS: { href: string; label: string; icon: IconName; center?: boolean; match: (p: string) => boolean }[] = [
   { href: '/', label: 'Home', icon: 'house', match: (p: string) => p === '/' },
   { href: '/library', label: 'Library', icon: 'book', match: (p: string) => p.startsWith('/library') },
@@ -18,7 +19,7 @@ const TABS: { href: string; label: string; icon: IconName; center?: boolean; mat
 
 export default function TabBar() {
   const pathname = usePathname() || '/';
-  if (pathname.startsWith('/interview')) return null;
+  if (pathname.startsWith('/interview') || pathname.startsWith('/dashboard') || pathname.startsWith('/library')) return null;
   return (
     <nav className="tabbar" aria-label="Main">
       {TABS.map((t) => {

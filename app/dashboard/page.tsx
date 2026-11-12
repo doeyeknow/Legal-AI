@@ -1,5 +1,5 @@
-import DashboardHome from '@/components/DashboardHome';
+import FinderCases from '@/components/FinderCases';
 
 export default function DashboardPage() {
-  return <DashboardHome />;
+  return <FinderCases />;
 }

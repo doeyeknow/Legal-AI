@@ -576,7 +576,7 @@ export const REST_MOTIONS: MotionDef[] = [
       { key: 'reasonCategory', label: 'What best describes your reason?', type: 'select', options: ['Distance / travel', 'Health / disability', 'Work', 'Caregiving', 'Transportation / finances', 'Safety', 'Other'], required: true },
       { key: 'reasonDetail', label: 'Explain the specific facts: distance or travel time, the nature of the hardship, employer/schedule facts, or the medical limitation. Attach documentation (an employer letter or medical note) if you have it.', type: 'textarea', required: true },
       { key: 'technologyAccess', label: 'What device and connection will you use, and will you be in a private, quiet place for the hearing?', type: 'textarea', required: true },
-      { key: 'contactDuringHearing', label: 'What phone number can the court reach you on during the hearing if the connection fails?', required: true },
+      { key: 'contactDuringHearing', label: 'What phone number can the court reach you on during the hearing if the connection fails?', type: 'phone', required: true },
       { key: 'priorRemoteRequests', label: 'Has remote appearance been requested or granted before in this case? If so, what was the outcome? If not, type "none".', required: true },
       { type: 'select', options: ['The other side agrees', 'The other side objects', 'I have not asked them yet'], key: 'otherSidePosition', label: 'Does the other side agree to you appearing remotely? If you have not asked them yet, say so, and give the date you will ask (or the date you did).', required: true },
       { key: 'documentsReady', label: 'How will you share any documents or exhibits with the court and the other side before the hearing?', type: 'textarea', required: true },

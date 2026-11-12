@@ -35,6 +35,8 @@ export interface CaseDocument {
   motionId: string;
   motionName: string;
   feeWaiver: boolean;
+  /** Optional user-given display name (evidence locker / rename). */
+  label: string | null;
   createdAt: string;
 }
 
