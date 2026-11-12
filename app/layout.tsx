@@ -6,13 +6,13 @@ import Fx from '@/components/Fx';
 import TabBar from '@/components/TabBar';
 
 export const metadata: Metadata = {
-  title: 'legal.eyeknow.app — Court motions, prepared from your answers',
+  title: 'quikForm.org — Court motions, AI Legal, Court Helper',
   description:
     'Answer plain-English questions and get a filing-ready court motion PDF for $3. Continuances, custody and support changes, contempt, fee waivers, eviction stays, and hundreds more court documents. Document preparation, not a law firm.',
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
-    title: 'Legal Motions',
+    title: 'quikForm',
     statusBarStyle: 'black-translucent',
   },
   icons: {
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: '#0B0E14',
   width: 'device-width',
-  initialScale: 1,
+  initialScale: 0.7,
   viewportFit: 'cover',
 };
 
@@ -44,7 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <Fx />
         <header className="sitehead">
-          <a className="brand" href="/"><Icon name="scales" size={20} /> legal<span>.eyeknow.app</span></a>
+          <a className="brand" href="/"><Icon name="scales" size={20} /> quikForm</span></a>
           <nav>
             <AccountNav />
           </nav>
