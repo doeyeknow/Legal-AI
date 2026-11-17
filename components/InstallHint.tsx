@@ -46,7 +46,7 @@ export default function InstallHint() {
     <div className="acctcard installhint">
       {mode === 'prompt' ? (
         <p>
-          <Icon name="install" size={17} /> <strong>Install this app</strong> — put legal.eyeknow.app on your home screen and it
+          <Icon name="install" size={17} /> <strong>Install this app</strong> — put quikForm on your home screen and it
           opens like any other app.{' '}
           <button
             type="button"

@@ -340,6 +340,6 @@ export async function generateMotionPdf(input: PdfInput): Promise<Uint8Array> {
   }
 
   doc.setTitle(`${motion.name} — ${a.fullName || 'pro se'}`);
-  doc.setAuthor('legal.eyeknow.app (document preparation)');
+  doc.setAuthor('quikform.org (document preparation)');
   return doc.save();
 }

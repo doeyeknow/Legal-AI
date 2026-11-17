@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { dbConfigured } from '@/lib/db';
 import { inboxDomain, resolveInboxLocal, storeInboundMessage } from '@/lib/inbox';
+import { notifyNewCourtMail } from '@/lib/push';
 
 // POST /api/webhooks/resend-inbound — Resend inbound (email.received).
 //
@@ -127,7 +128,11 @@ export async function POST(req: Request) {
   }
 
   // Owned address: fetch the full content now (attachment URLs
-  // expire), store, parse, propose — all in the shared path.
+  // expire), store, parse, propose — all in the shared path. A
+  // genuinely new message (not a redelivery) notifies the owner:
+  // push names the sender only, never mail content, and a failure
+  // to notify never fails ingestion.
+  let stored: { messageId: string; duplicate: boolean } | null = null;
   try {
     const res = await fetch(`https://api.resend.com/emails/receiving/${data.email_id}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -171,7 +176,7 @@ export async function POST(req: Request) {
         content: buf,
       });
     }
-    await storeInboundMessage({
+    stored = await storeInboundMessage({
       provider: 'resend',
       providerEmailId: data.email_id,
       messageId: full.message_id || data.message_id || null,
@@ -190,7 +195,7 @@ export async function POST(req: Request) {
     // Keep a metadata-only row in 'received' status; the sweeper
     // retries the fetch/parse path and surfaces persistent failures
     // in the UI instead of losing the mail silently.
-    await storeInboundMessage({
+    stored = await storeInboundMessage({
       provider: 'resend',
       providerEmailId: data.email_id,
       messageId: data.message_id || null,
@@ -203,7 +208,10 @@ export async function POST(req: Request) {
       receivedAt: data.created_at || null,
       rawMeta: { fetchFailed: true },
       deferParse: true,
-    }).catch(() => undefined);
+    }).catch(() => null);
+  }
+  if (stored && !stored.duplicate) {
+    await notifyNewCourtMail(owner.userId, fromName || fromEmail);
   }
   return NextResponse.json({ received: true });
 }

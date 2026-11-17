@@ -79,7 +79,7 @@ async function checkNmPortal(caseNumber: string): Promise<string> {
       redirect: 'follow',
       signal: ctrl.signal,
       headers: {
-        'User-Agent': 'legal.eyeknow.app watch check (single user-initiated case check)',
+        'User-Agent': 'quikform.org watch check (single user-initiated case check)',
         Accept: 'text/html',
       },
     });

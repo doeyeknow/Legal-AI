@@ -4,6 +4,7 @@ import AccountNav from '@/components/AccountNav';
 import { Icon } from '@/components/icons';
 import Fx from '@/components/Fx';
 import TabBar from '@/components/TabBar';
+import MailWatcher from '@/components/MailWatcher';
 
 export const metadata: Metadata = {
   title: 'quikForm.org — Court motions, AI Legal, Court Helper',
@@ -56,6 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </header>
         <main>{children}</main>
         <TabBar />
+        <MailWatcher />
       </body>
     </html>
   );

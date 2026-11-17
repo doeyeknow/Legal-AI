@@ -62,6 +62,6 @@ export async function generateTextPdf(title: string, body: string): Promise<Uint
     y -= 8;
   }
   doc.setTitle(title || 'Court communication draft');
-  doc.setAuthor('legal.eyeknow.app (document preparation)');
+  doc.setAuthor('quikform.org (document preparation)');
   return doc.save();
 }

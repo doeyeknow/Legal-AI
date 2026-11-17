@@ -1062,3 +1062,53 @@ main:has(.finderwin) { overflow: hidden; padding: 0; max-width: none; }
 .checkline input[type="checkbox"] { width: 18px; height: 18px; vertical-align: -3px; }
 .casefacts-list { list-style: none; margin: 10px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .casefacts-list .factcard { margin-bottom: 0; }
+
+/* New-mail toast: a fixed overlay that rides above the bottom tab
+   bar, never scrolls, never causes page scroll, and sits below
+   open modals. Tapping it opens Court mail. */
+.mailtoast {
+  position: fixed; z-index: 80; left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  width: min(480px, calc(100% - 32px));
+  display: flex; align-items: center; gap: 10px;
+  background: var(--card); color: var(--ink);
+  border: 1px solid var(--line); border-left: 3px solid var(--gold);
+  border-radius: 12px; padding: 12px 10px 12px 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  cursor: pointer; animation: toastin 200ms ease-out;
+}
+.mailtoast-dot {
+  flex: none; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--gold);
+}
+.mailtoast-text { flex: 1; min-width: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mailtoast-close {
+  flex: none; border: 0; background: transparent; color: var(--ink2);
+  font-size: 22px; line-height: 1; padding: 4px 8px; cursor: pointer;
+}
+@keyframes toastin { from { transform: translate(-50%, 8px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .mailtoast { animation: none !important; }
+}
+
+/* Email-notifications switch on the Account page. */
+.pushrow { display: flex; align-items: center; gap: 12px; margin: 12px 0 4px; }
+.pushswitch {
+  flex: none; width: 52px; height: 30px; border-radius: 999px;
+  border: 1px solid var(--fieldline); background: var(--bot);
+  padding: 0; cursor: pointer; position: relative;
+  transition: background 150ms ease, border-color 150ms ease;
+}
+.pushswitch .pushknob {
+  position: absolute; top: 3px; left: 3px; width: 22px; height: 22px;
+  border-radius: 50%; background: var(--ink2);
+  transition: left 150ms ease, background 150ms ease;
+}
+.pushswitch.on { background: var(--goldtint); border-color: var(--gold); }
+.pushswitch.on .pushknob { left: 25px; background: var(--gold); }
+.pushswitch:disabled { opacity: 0.5; cursor: default; }
+.pushstate { font-size: 15px; }
+@media (prefers-reduced-motion: reduce) {
+  .pushswitch, .pushswitch .pushknob { transition: none; }
+}

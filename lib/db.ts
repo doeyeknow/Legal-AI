@@ -301,6 +301,28 @@ export function ensureSchema(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )`);
+      // ---- Web Push subscriptions (new court mail only) ----
+      // One row per opted-in browser, owned by the signed-in user
+      // who turned notifications on. The endpoint is the upsert
+      // key, so re-subscribing the same browser refreshes its
+      // keys instead of duplicating the row. Dead endpoints
+      // (404/410 from the push service) are pruned at send time.
+      await query(`CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        endpoint TEXT NOT NULL,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        user_agent TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`);
+      await query(
+        `CREATE UNIQUE INDEX IF NOT EXISTS push_subs_endpoint_uidx ON push_subscriptions (endpoint)`,
+      );
+      await query(
+        `CREATE INDEX IF NOT EXISTS push_subs_user_idx ON push_subscriptions (user_id)`,
+      );
     })().catch((err) => {
       globalThis.__legalSchemaReady = undefined;
       throw err;

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Modal from './Modal';
 import InboxAddressCard from './InboxAddress';
+import EmailPushToggle from './EmailPushToggle';
 import { EMPTY_PROFILE, PROFILE_FIELDS, type ProfileInfo } from '@/lib/profile';
 
 interface MeUser extends ProfileInfo {
@@ -218,6 +219,7 @@ export default function AccountPanel() {
         )}
       </div>
       <InboxAddressCard />
+      <EmailPushToggle />
       </>
     );
   }
