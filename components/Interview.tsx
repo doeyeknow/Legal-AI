@@ -1310,11 +1310,9 @@ export default function Interview() {
 
     const p = getPlayer();
     spokenUptoRef.current = msgs.length;
-    p.enqueue(
-      'Voice mode is on. One thing to know up front: I am an automated assistant, not a lawyer — this is document preparation, not legal advice, the same note that is on your screen. I will read each question out loud, then listen for your answer. When you finish speaking I will continue automatically. You can still type or use the answer buttons.',
-    );
+    // Speak the current bot prompt only — no long voice-mode disclaimer.
     const lastBot = [...msgs].reverse().find((m) => m.from === 'bot');
-    if (lastBot) p.enqueue(lastBot.text);
+    p.enqueue(lastBot?.text || 'How can I help you?');
     voiceOnRef.current = true;
     setVoiceOn(true);
   }
@@ -1514,6 +1512,16 @@ export default function Interview() {
   fnRef.current = { submitInput, startRecognition, maybeAutoListen };
 
   const currentField = (stage === 'fields' || stage === 'feew-fields') ? queue[qIdx] : null;
+
+  // Date questions: open the calendar automatically so the user does not
+  // have to hunt for the icon. They can still type a date if they prefer.
+  useEffect(() => {
+    if (currentField?.type === 'date') {
+      setDatePickOpen(true);
+    } else {
+      setDatePickOpen(false);
+    }
+  }, [currentField?.key, currentField?.type]);
   // Courts-database key for the court-name step (state+county are
   // collected before courtName in the shared field order).
   const courtKey = answers.state && answers.county
@@ -1839,7 +1847,7 @@ export default function Interview() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={stage === 'situation' ? 'Describe your situation…' : 'Type your answer…'}
+            placeholder={stage === 'situation' ? 'Describe your situation…' : currentField?.type === 'phone' ? 'Phone number' : currentField?.type === 'date' ? 'Or type a date…' : 'Type your answer…'}
             aria-label={stage === 'situation' ? 'Describe your situation' : 'Your answer'}
             inputMode={currentField?.type === 'phone' ? 'tel' : undefined}
             autoComplete={currentField?.type === 'phone' ? 'tel' : undefined}
