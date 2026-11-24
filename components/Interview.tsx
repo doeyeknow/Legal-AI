@@ -898,9 +898,13 @@ export default function Interview() {
       p.onActiveChange = (active) => {
         speakingRef.current = active;
         setSpeaking(active);
-        // Echo guard: the microphone never runs while the
-        // assistant is speaking.
-        if (active) stopRecognition(true);
+        // Do NOT stop recognition here — stop/start makes Chrome abort
+        // and flash the mic. While active, onresult ignores transcripts.
+        if (active) {
+          setSpeechStatus('Speaking…');
+        } else if (voiceOnRef.current && listeningRef.current) {
+          setSpeechStatus('Listening for your answer…');
+        }
       };
       p.onDrained = () => {
         // The assistant finished a question — in voice mode that
@@ -926,9 +930,7 @@ export default function Interview() {
     return s === 'situation' || s === 'fields' || s === 'feew-fields';
   }
 
-  /** Stop any running recognition and cancel a pending listen.
-   *  suppressEnd marks the session's onend as "we meant to stop",
-   *  so it doesn't count as an empty turn in the loop. */
+  /** Stop recognition for good (voice call ended or user paused). */
   function stopRecognition(suppressEnd = true) {
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
@@ -939,38 +941,11 @@ export default function Interview() {
     if (session && suppressEnd) session.suppressEnd = true;
     if (rec) {
       try { rec.onresult = null; rec.onerror = null; rec.onend = null; rec.onstart = null; } catch { /* */ }
-      try { rec.stop(); } catch { /* already stopped */ }
+      try { rec.stop(); } catch { /* */ }
       recogRef.current = null;
     }
-  }
-
-  /** Ask for microphone access while we still have a user gesture.
-   *  Web Speech often fails instantly (mic flash) if the first
-   *  recognition.start() happens later, after TTS, with no gesture. */
-  async function ensureMicAccess(): Promise<boolean> {
-    if (micPrimedRef.current) return true;
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      return true;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      for (const t of stream.getTracks()) t.stop();
-      micPrimedRef.current = true;
-      autoBlockedRef.current = false;
-      return true;
-    } catch (err: any) {
-      const name = String(err?.name || err || '');
-      autoBlockedRef.current = true;
-      const msg =
-        name.includes('NotAllowed') || name.includes('PermissionDenied')
-          ? 'Microphone access was blocked — typing works just the same.'
-          : name.includes('NotFound') || name.includes('DevicesNotFound')
-            ? 'No microphone was found on this device — typing works just the same.'
-            : 'Could not open the microphone — typing works just the same.';
-      setVoiceNote(msg);
-      setSpeechStatus(msg);
-      return false;
-    }
+    setListening(false);
+    listeningRef.current = false;
   }
 
   function reportSpeech(msg: string) {
@@ -979,32 +954,32 @@ export default function Interview() {
     try { console.warn('[speech]', msg); } catch { /* */ }
   }
 
-  /** Start one recognition session. `auto` sessions belong to the
-   *  hands-free loop (they retry on silence and count empty turns);
-   *  manual ones come from the mic button and behave as voice v1. */
+  /**
+   * Persistent call-style recognition.
+   *
+   * Browser Web Speech aborts if we stop/start around every TTS line.
+   * So for voice mode we start ONE continuous session on the Voice call
+   * click (user gesture) and keep it running for the whole call:
+   * - While the bot speaks: ignore transcripts (echo guard in software)
+   * - When the bot is done: accept final transcripts as answers
+   * - onend while voice still on: restart quietly (same call)
+   */
   function startRecognition(auto: boolean): boolean {
     const w = window as any;
     const SR = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!SR) {
       const msg = 'Voice typing is not supported in this browser — typing, or the answer buttons above, work just the same.';
-      if (auto) {
-        autoBlockedRef.current = true;
-        showNoteOnce('unsupported', msg);
-        setSpeechStatus(msg);
-      } else {
-        reportSpeech(msg);
-      }
+      autoBlockedRef.current = true;
+      reportSpeech(msg);
       return false;
     }
-    if (listeningRef.current) return true;
+    if (listeningRef.current && recogRef.current) return true;
 
-    // Fully detach any prior instance. Reusing the same object and
-    // calling stop()+start() in one turn makes Chrome fire "aborted"
-    // on the new session (mic blinks: "Listening was interrupted").
-    const prev = recogRef.current;
-    if (prev) {
-      try { prev.onresult = null; prev.onerror = null; prev.onend = null; prev.onstart = null; } catch { /* */ }
-      try { prev.stop(); } catch { /* */ }
+    // Kill any half-dead instance first.
+    if (recogRef.current) {
+      const old = recogRef.current;
+      try { old.onresult = null; old.onerror = null; old.onend = null; old.onstart = null; } catch { /* */ }
+      try { old.stop(); } catch { /* */ }
       recogRef.current = null;
     }
 
@@ -1015,24 +990,35 @@ export default function Interview() {
       suppressEnd: false,
       error: '' as string,
       startedAt: Date.now(),
-      retryOnAbort: !auto, // one automatic retry for manual taps only
+      // Call mode: keep the session alive across questions.
+      persistent: voiceOnRef.current,
     };
     recogSessionRef.current = session;
     recogRef.current = rec;
     rec.lang = 'en-US';
     rec.interimResults = true;
-    rec.continuous = false;
+    // Continuous for the whole voice call so we never re-request the mic.
+    rec.continuous = true;
     try { rec.maxAlternatives = 1; } catch { /* */ }
 
     rec.onstart = () => {
       if (recogSessionRef.current !== session) return;
       setListening(true);
       listeningRef.current = true;
-      setSpeechStatus(auto ? 'Listening (auto)…' : 'Listening… speak now');
+      if (!speakingRef.current) {
+        setSpeechStatus('Listening for your answer…');
+      }
     };
 
     rec.onresult = (e: any) => {
       if (recogSessionRef.current !== session) return;
+      // Software echo guard: bot is talking — discard everything.
+      if (speakingRef.current) return;
+      // Only capture answers on real question stages.
+      if (!isAnswerStage(stageRef.current)) return;
+      if (pendingCountyRef.current) return;
+      if (listenPausedRef.current) return;
+
       let interim = '';
       let finalText = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -1045,16 +1031,10 @@ export default function Interview() {
         setSpeechStatus(`Hearing: ${interim.slice(0, 60)}`);
       }
       if (finalText.trim()) {
-        session.gotResult = true;
         emptyCyclesRef.current = 0;
         setInput('');
-        session.suppressEnd = true;
-        try { rec.onresult = null; rec.onerror = null; rec.onend = null; rec.onstart = null; } catch { /* */ }
-        try { rec.stop(); } catch { /* */ }
-        if (recogRef.current === rec) recogRef.current = null;
-        setListening(false);
-        listeningRef.current = false;
         setSpeechStatus(null);
+        // Keep recognition running for the next question; just submit.
         fnRef.current.submitInput(finalText);
       }
     };
@@ -1062,29 +1042,23 @@ export default function Interview() {
     rec.onend = () => {
       if (recogSessionRef.current !== session) return;
       if (recogRef.current === rec) recogRef.current = null;
-      const elapsed = Date.now() - session.startedAt;
       setListening(false);
       listeningRef.current = false;
 
-      // Chrome often aborts a brand-new session if a prior stop() is still
-      // settling. Retry once for manual taps before showing an error.
-      if (
-        !session.auto &&
-        !session.gotResult &&
-        !session.suppressEnd &&
-        session.error === 'aborted' &&
-        session.retryOnAbort &&
-        elapsed < 1500
-      ) {
-        session.retryOnAbort = false;
-        setSpeechStatus('Retrying microphone…');
-        setTimeout(() => {
-          if (!listeningRef.current) fnRef.current.startRecognition(false);
-        }, 120);
+      // Voice call still on: restart continuous session (no user click needed
+      // after the first successful start in most Chromium builds).
+      if (voiceOnRef.current && !autoBlockedRef.current && !listenPausedRef.current) {
+        if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = setTimeout(() => {
+          retryTimerRef.current = null;
+          if (!voiceOnRef.current || autoBlockedRef.current || listenPausedRef.current) return;
+          if (listeningRef.current) return;
+          fnRef.current.startRecognition(true);
+        }, 250);
         return;
       }
 
-      if (!session.auto && !session.gotResult && !session.suppressEnd) {
+      if (!session.suppressEnd && session.error && session.error !== 'aborted' && session.error !== 'no-speech') {
         if (session.error === 'network') {
           reportSpeech(
             'Voice typing could not reach the speech service (network). Check connection / VPN / ad-block, or type your answer.',
@@ -1093,35 +1067,10 @@ export default function Interview() {
           reportSpeech('Microphone access was blocked — typing works just the same.');
         } else if (session.error === 'audio-capture') {
           reportSpeech('Could not capture audio from the microphone — typing works just the same.');
-        } else if (session.error === 'aborted') {
-          reportSpeech(
-            'Listening was interrupted right away. Tap the mic once more, or type your answer.',
-          );
-        } else if (session.error === 'no-speech') {
-          reportSpeech('No speech detected. Tap the mic and speak, or type your answer.');
-        } else if (session.error) {
-          reportSpeech(`Voice typing stopped (${session.error}). Typing works just the same.`);
-        } else if (elapsed < 1200) {
-          reportSpeech(
-            `Listening stopped after ${elapsed}ms with no result. Often a browser speech-service issue — try Chrome/Edge, or type your answer.`,
-          );
         } else {
-          reportSpeech('Listening ended without catching speech. Tap the mic and try again, or type.');
-        }
-      } else if (session.auto && session.error && session.error !== 'aborted' && session.error !== 'no-speech') {
-        if (session.error === 'network') {
-          showNoteOnce(
-            'network',
-            'Voice typing could not reach the speech service (network). Check connection / VPN / ad-block, or type your answer.',
-          );
-          setSpeechStatus('Speech service network error');
-        } else if (session.error === 'not-allowed' || session.error === 'service-not-allowed') {
-          showNoteOnce('blocked', 'Microphone access was blocked — typing works just the same.');
-          setSpeechStatus('Microphone blocked');
+          reportSpeech(`Voice typing stopped (${session.error}). Typing works just the same.`);
         }
       }
-
-      handleRecogEnd(session);
     };
 
     rec.onerror = (e: any) => {
@@ -1131,6 +1080,12 @@ export default function Interview() {
       try { console.warn('[speech] error', err, e); } catch { /* */ }
       if (err === 'not-allowed' || err === 'service-not-allowed') {
         autoBlockedRef.current = true;
+        session.suppressEnd = true;
+        reportSpeech('Microphone access was blocked — typing works just the same.');
+      } else if (err === 'network') {
+        // Often transient; onend will restart if voice still on.
+      } else if (err === 'aborted') {
+        session.suppressEnd = true;
       }
     };
 
@@ -1138,88 +1093,46 @@ export default function Interview() {
       rec.start();
       setListening(true);
       listeningRef.current = true;
-      if (!auto) autoBlockedRef.current = false;
+      autoBlockedRef.current = false;
       return true;
     } catch (err: any) {
       setListening(false);
       listeningRef.current = false;
       if (recogRef.current === rec) recogRef.current = null;
-      const msg = `Listening could not be started (${String(err?.message || err || 'error')}) — typing works just the same.`;
-      if (!auto) reportSpeech(msg);
-      else {
-        showNoteOnce('start-fail', msg);
-        setSpeechStatus(msg);
-      }
+      reportSpeech(
+        `Listening could not be started (${String(err?.message || err || 'error')}) — typing works just the same.`,
+      );
       return false;
     }
   }
 
-  /** A recognition session ended. Successful answers reset the
-   *  loop; deliberate stops are ignored; a silent AUTO session is
-   *  retried a couple of times (silence is normal on a call), then
-   *  the loop pauses and hands control to the mic button. */
-  function handleRecogEnd(session: { auto: boolean; gotResult: boolean; suppressEnd: boolean; error?: string; startedAt?: number }) {
-    if (session.gotResult) {
-      emptyCyclesRef.current = 0;
-      listenPausedRef.current = false;
-      setSpeechStatus(null);
-      return;
-    }
-    if (session.suppressEnd) return;
-    if (!voiceOnRef.current) return;
-    if (autoBlockedRef.current) return;
-    if (!session.auto) {
-      listenPausedRef.current = true;
-      return;
-    }
-    if (!isAnswerStage(stageRef.current) || pendingCountyRef.current) return;
-    emptyCyclesRef.current += 1;
-    if (emptyCyclesRef.current >= 3) {
-      listenPausedRef.current = true;
-      const msg = "Say your answer, or tap the mic button when you're ready";
-      setVoiceNote(msg);
-      setSpeechStatus(msg);
-      return;
-    }
-    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-    retryTimerRef.current = setTimeout(() => {
-      retryTimerRef.current = null;
-      fnRef.current.maybeAutoListen();
-    }, 800);
-  }
-
-  /** The hands-free loop's "your turn" moment: the assistant has
-   *  finished speaking at an answer-expecting stage, so the
-   *  microphone opens by itself. Every guard is checked again when
-   *  the short delay fires — speech may have restarted, the stage
-   *  may have moved, the user may have taken over. */
+  /** After TTS finishes: we no longer stop/start the mic. Just update UI —
+   *  continuous recognition is already running and will accept the answer. */
   function maybeAutoListen() {
     if (!voiceOnRef.current) return;
     if (!isAnswerStage(stageRef.current)) return;
     if (pendingCountyRef.current) return;
-    if (speakingRef.current || listeningRef.current) return;
     if (autoBlockedRef.current || listenPausedRef.current) return;
-    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-    retryTimerRef.current = setTimeout(() => {
-      retryTimerRef.current = null;
-      if (!voiceOnRef.current) return;
-      if (!isAnswerStage(stageRef.current)) return;
-      if (pendingCountyRef.current) return;
-      if (speakingRef.current || listeningRef.current) return;
-      if (autoBlockedRef.current || listenPausedRef.current) return;
-      fnRef.current.startRecognition(true);
-    }, 300);
+    // Ensure a session is alive; if it died mid-call, restart.
+    if (!listeningRef.current) {
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = setTimeout(() => {
+        retryTimerRef.current = null;
+        if (!voiceOnRef.current || speakingRef.current) return;
+        fnRef.current.startRecognition(true);
+      }, 200);
+      return;
+    }
+    setSpeechStatus('Listening for your answer…');
   }
 
-  async function toggleVoice() {
+  function toggleVoice() {
     if (voiceOn) {
       voiceOnRef.current = false;
       playerRef.current?.stop();
       stopRecognition(true);
       listenPausedRef.current = false;
       emptyCyclesRef.current = 0;
-      setListening(false);
-      listeningRef.current = false;
       setVoiceOn(false);
       setSpeaking(false);
       speakingRef.current = false;
@@ -1230,12 +1143,19 @@ export default function Interview() {
     setSpeechStatus(null);
     listenPausedRef.current = false;
     emptyCyclesRef.current = 0;
-    // Prime mic permission on this user gesture so auto-listen after
-    // TTS is not the first time the browser sees a mic request.
-    await ensureMicAccess();
+    autoBlockedRef.current = false;
+
+    // Start continuous recognition NOW (inside the click — required by Chrome).
+    // This session stays up for the whole call; we only ignore audio while TTS plays.
+    const ok = startRecognition(false);
+    if (!ok) {
+      // Still allow TTS-only mode.
+    } else {
+      micPrimedRef.current = true;
+      setSpeechStatus('Voice on — I will listen after each question.');
+    }
+
     const p = getPlayer();
-    // Everything already on screen counts as heard except the
-    // current question, which is re-read to open the "call".
     spokenUptoRef.current = msgs.length;
     p.enqueue(
       'Voice mode is on. One thing to know up front: I am an automated assistant, not a lawyer — this is document preparation, not legal advice, the same note that is on your screen. I will read each question out loud, then listen for your answer — no need to tap anything. You can still tap an answer button or type, whichever you like.',
@@ -1246,14 +1166,22 @@ export default function Interview() {
     setVoiceOn(true);
   }
 
-  async function toggleMic() {
-    if (listening) {
-      // Tapping mid-listen takes manual control of the call: the
-      // loop pauses until the next tap.
-      if (voiceOnRef.current) listenPausedRef.current = true;
+  /** Manual mic: if a call session is already running, just unpause;
+   *  otherwise start a one-shot style continuous session. */
+  function toggleMic() {
+    if (listenPausedRef.current && voiceOnRef.current && listeningRef.current) {
+      listenPausedRef.current = false;
+      setSpeechStatus('Listening for your answer…');
+      return;
+    }
+    if (listeningRef.current || listening) {
+      // Pause accepting answers (call stays up) or full stop if voice off.
+      if (voiceOnRef.current) {
+        listenPausedRef.current = true;
+        setSpeechStatus('Mic paused — tap to listen again.');
+        return;
+      }
       stopRecognition(true);
-      setListening(false);
-      listeningRef.current = false;
       setSpeechStatus(null);
       return;
     }
@@ -1261,20 +1189,11 @@ export default function Interview() {
     setSpeechStatus('Starting microphone…');
     listenPausedRef.current = false;
     emptyCyclesRef.current = 0;
-    // Cancel any pending auto-listen so it cannot stop/start-race this tap.
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
       retryTimerRef.current = null;
     }
-    // Barge-in: tapping Speak while the assistant is talking stops
-    // the speech first, so the mic never hears the assistant.
     if (voiceOnRef.current && speakingRef.current) playerRef.current?.stop();
-    // Drop any in-flight recognition before starting a clean session.
-    stopRecognition(true);
-    const ok = await ensureMicAccess();
-    if (!ok) return;
-    // Brief yield so Chrome finishes detaching the previous session.
-    await new Promise((r) => setTimeout(r, 150));
     startRecognition(false);
   }
 
