@@ -428,6 +428,15 @@ function DeadlinesSection({
   );
 }
 
+/** ISO → the "YYYY-MM-DDTHH:MM" a datetime-local input expects, in
+ *  the viewer's own time zone. */
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 function AppearanceSection({
   data,
   setData,
@@ -437,7 +446,7 @@ function AppearanceSection({
 }) {
   const a = data.appearance;
   const [hearingAt, setHearingAt] = useState(
-    a?.hearingAt ? a.hearingAt.slice(0, 16) : '',
+    a?.hearingAt ? toLocalInput(a.hearingAt) : '',
   );
   const [platform, setPlatform] = useState(a?.platform || 'Webex');
   const [joinUrl, setJoinUrl] = useState(a?.joinUrl || '');
@@ -505,15 +514,26 @@ function AppearanceSection({
                 : ''}
           {a.phoneBackup ? <span className="fineprint block">Court phone: {a.phoneBackup}</span> : null}
         </p>
-      ) : (
+      ) : null}
+      {a && (a.meetingId || a.passcode || a.dialIn || a.instructions) ? (
+        <dl className="agendadetails hearingjoin">
+          {a.meetingId && (<><dt>Meeting number</dt><dd>{a.meetingId}</dd></>)}
+          {a.passcode && (<><dt>Passcode</dt><dd>{a.passcode}</dd></>)}
+          {a.dialIn && (<><dt>Join by phone</dt><dd><a href={`tel:${a.dialIn.replace(/[^\d+]/g, '')}`}>{a.dialIn}</a></dd></>)}
+          {a.instructions && (<><dt>Instructions</dt><dd className="prewrap">{a.instructions}</dd></>)}
+        </dl>
+      ) : null}
+      {!a?.hearingAt && !a?.joinUrl && (
         <p className="fineprint">No hearing details saved yet.</p>
       )}
       <div className="choices">
         <button className="btn" onClick={() => setOpen(true)}>
           {a?.hearingAt ? 'Edit hearing details' : 'Add hearing details'}
         </button>
-        {a?.joinUrl && a.remoteStatus === 'granted' && (
-          <a className="btn" href={a.joinUrl} target="_blank" rel="noreferrer">Join the hearing ↗</a>
+        {a?.joinUrl && a.remoteStatus !== 'denied' && (
+          <a className="btn primary" href={a.joinUrl} target="_blank" rel="noreferrer">
+            <Icon name="video" size={15} /> Join the hearing{a.platform && a.platform !== 'Other' ? ` on ${a.platform}` : ''}
+          </a>
         )}
         <Link className="btn ghost" href="/interview">
           Prepare a Motion for Remote Appearance

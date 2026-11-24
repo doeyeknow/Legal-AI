@@ -35,6 +35,10 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       joinUrl,
       phoneBackup: cleanStr(body?.phoneBackup, 80),
       remoteStatus,
+      ...(typeof body?.meetingId === 'string' ? { meetingId: cleanStr(body.meetingId, 80) } : {}),
+      ...(typeof body?.passcode === 'string' ? { passcode: cleanStr(body.passcode, 80) } : {}),
+      ...(typeof body?.dialIn === 'string' ? { dialIn: cleanStr(body.dialIn, 120) } : {}),
+      ...(typeof body?.instructions === 'string' ? { instructions: cleanStr(body.instructions, 2000) } : {}),
     });
     if (!saved) return notFound();
     return NextResponse.json({ appearance: saved });

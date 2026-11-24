@@ -24,6 +24,10 @@ export function cleanEventInput(
       occurredTime,
       location: cleanStr(body?.location, 300),
       people: cleanStr(body?.people, 500),
+      ...(typeof body?.phone === 'string' ? { phone: cleanStr(body.phone, 60) } : {}),
+      ...(typeof body?.joinUrl === 'string' && (!body.joinUrl || /^https?:\/\//i.test(body.joinUrl))
+        ? { joinUrl: cleanStr(body.joinUrl, 500) }
+        : {}),
     },
   };
 }

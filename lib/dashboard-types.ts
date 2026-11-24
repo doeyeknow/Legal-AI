@@ -87,6 +87,11 @@ export interface Appearance {
   joinUrl: string;
   phoneBackup: string;
   remoteStatus: RemoteStatus;
+  /** Remote-appearance details (from court mail or typed in). */
+  meetingId: string;
+  passcode: string;
+  dialIn: string;
+  instructions: string;
 }
 
 /** One extracted fact from a court-mail message. Facts are
@@ -191,6 +196,14 @@ export interface CaseEvent {
   occurredTime: string | null;
   location: string;
   people: string;
+  /** For calls to make: the number to dial. */
+  phone: string;
+  /** A meeting link, when the event is a remote meeting. */
+  joinUrl: string;
+  /** 'user' (typed in), 'mail' (from court mail), 'call' (heard on a call). */
+  source: string;
+  sourceRef: string | null;
+  done: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -201,6 +214,7 @@ export const CASE_EVENT_KINDS = [
   { key: 'filing', label: 'Filing' },
   { key: 'service', label: 'Papers served or received' },
   { key: 'order', label: 'Court order or ruling' },
+  { key: 'call', label: 'Phone call to make' },
   { key: 'communication', label: 'Call, letter, or meeting' },
   { key: 'payment', label: 'Payment' },
   { key: 'evidence', label: 'Evidence gathered' },
@@ -239,7 +253,37 @@ export const APPEARANCE_PLATFORMS = [
   'Webex',
   'Zoom',
   'Google Meet',
+  'Microsoft Teams',
   'Phone dial-in',
   'In person only',
   'Other',
 ] as const;
+
+/** One entry on the calendar: a deadline, the case's hearing, or a
+ *  timeline event (calls to make, meetings, user events). */
+export interface CalendarItem {
+  id: string;
+  source: 'deadline' | 'hearing' | 'event';
+  /** Deadline type, event kind, or 'hearing'. */
+  kind: string;
+  caseId: string;
+  caseTitle: string;
+  title: string;
+  /** YYYY-MM-DD */
+  date: string;
+  /** HH:MM (24h), when known. */
+  time: string | null;
+  done: boolean;
+  details: string;
+  joinUrl: string;
+  platform: string;
+  meetingId: string;
+  passcode: string;
+  dialIn: string;
+  phone: string;
+  /** For events: the event id (calls, done toggling). */
+  eventId: string | null;
+  /** Hearings: the exact timestamp (ISO); the client reads date/time
+   *  from it in the user's own time zone. */
+  at: string | null;
+}

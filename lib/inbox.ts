@@ -1,9 +1,12 @@
 // Court-mail inbox — server side. See research_notes/
 // legal-inbox-design.md for the full design and its golden rule:
 //
-//   Facts are PROPOSED until the user confirms them. An unconfirmed
-//   fact never reaches a case file or a generated document. Nothing
-//   auto-files, auto-sends, or auto-replies — ever.
+//   Facts from court mail are added to the matching case
+//   automatically (dates, case numbers, join links, call requests)
+//   unless the user turns that off; every added fact can be removed
+//   again. Low-confidence facts and mail that failed sender checks
+//   still wait for the user. Nothing auto-files, auto-sends, or
+//   auto-replies — ever.
 //
 // getCaseFacts() below is the ONE place the document generator
 // reads facts from, and it reads status = 'confirmed' rows only.
@@ -11,18 +14,23 @@
 import { randomBytes } from 'node:crypto';
 import { ensureSchema, query } from './db';
 import {
+  addCaseEvent,
   addComm,
   addDeadline,
   createCase,
+  deleteCaseEvent,
+  deleteDeadline,
+  getAppearance,
   getOwnedCaseLite,
   upsertAppearance,
 } from './cases';
 import type { RemoteStatus } from './dashboard-types';
 
 type AppearanceInput = Parameters<typeof upsertAppearance>[2];
-import { extractFromMessage, longDate, longTime, type ParseCaseRef } from './inbox-parse';
+import { extractFromMessage, longDate, longTime, platformFromUrl, type ParseCaseRef } from './inbox-parse';
 import { deadlineType } from './comm-templates';
 import { FACT_KIND_TO_BAG_KEY } from './case-facts';
+import { DEFAULT_TIME_ZONE, validTimeZone, wallClockToIso } from './tz';
 import type { Answers } from './motions/types';
 import type {
   ExtractedFact,
@@ -339,6 +347,13 @@ export async function parseAndPropose(messageId: string, userId: string): Promis
         f.valueDate, f.valueAt, f.confidence, f.span, f.spanOffset, f.basis,
       ],
     );
+  }
+  try {
+    await autoApplyMessage(userId, messageId);
+  } catch (err) {
+    // The mail and its facts are stored either way; the user can
+    // still add them by hand from the inbox.
+    console.error('court mail auto-apply failed', err);
   }
 }
 
@@ -744,12 +759,82 @@ const FACT_DEADLINE_LABEL: Record<string, string> = {
   discovery_due: 'Discovery / disclosure due',
 };
 
+/** A deadline already on the case for this type and day, if any —
+ *  re-reading the same mail (or a hearing's date and time facts)
+ *  must not stack duplicates on the calendar. */
+async function existingDeadlineId(caseId: string, type: string, dueAt: string): Promise<string | null> {
+  const rows = await query<{ id: string }>(
+    `SELECT id FROM deadlines WHERE case_id = $1 AND type = $2 AND due_at = $3 LIMIT 1`,
+    [caseId, type, dueAt],
+  );
+  return rows[0]?.id || null;
+}
+
+const REMOTE_KINDS = new Set(['join_link', 'meeting_id', 'passcode', 'dial_in', 'remote_instructions']);
+
+/** Merge one remote-appearance detail into the case's appearance. */
+async function mergeRemoteDetail(userId: string, caseId: string, fact: FactRow): Promise<string | null> {
+  const ex = await getAppearance(caseId);
+  const input: AppearanceInput = {
+    hearingAt: ex?.hearingAt || null,
+    platform: ex?.platform || 'Other',
+    joinUrl: ex?.joinUrl || '',
+    phoneBackup: ex?.phoneBackup || '',
+    remoteStatus: ex?.remoteStatus || 'not_requested',
+  };
+  const v = fact.value_text;
+  if (fact.kind === 'join_link') {
+    input.joinUrl = v.slice(0, 500);
+    input.platform = platformFromUrl(v);
+    // The court sent a link to appear remotely — remote appearance is on.
+    if (input.remoteStatus !== 'denied') input.remoteStatus = 'granted';
+  } else if (fact.kind === 'meeting_id') input.meetingId = v.slice(0, 80);
+  else if (fact.kind === 'passcode') input.passcode = v.slice(0, 80);
+  else if (fact.kind === 'dial_in') {
+    input.dialIn = v.slice(0, 120);
+    if (!input.phoneBackup) input.phoneBackup = v.slice(0, 80);
+  } else if (fact.kind === 'remote_instructions') input.instructions = v.slice(0, 2000);
+  const app = await upsertAppearance(userId, caseId, input);
+  return app?.id || null;
+}
+
 async function applyFactToCase(
   userId: string,
   fact: FactRow,
   caseId: string,
 ): Promise<Record<string, unknown>> {
   const applied: Record<string, unknown> = { ...(fact.applied || {}) };
+  if (REMOTE_KINDS.has(fact.kind)) {
+    const id = await mergeRemoteDetail(userId, caseId, fact);
+    if (id) applied.appearanceId = id;
+    return applied;
+  }
+  if (fact.kind === 'callback_phone') {
+    if (!applied.eventId) {
+      const msg = await query<{ from_name: string; from_email: string; received_at: string; subject: string }>(
+        `SELECT from_name, from_email, received_at, subject FROM inbound_messages WHERE id = $1`,
+        [fact.message_id],
+      );
+      const m = msg[0];
+      const who = m?.from_name || m?.from_email || 'the sender';
+      const when = fact.value_date ? String(fact.value_date).slice(0, 10) : utcDay(m?.received_at);
+      const time = fact.value_at ? new Date(fact.value_at).toISOString().slice(11, 16) : null;
+      const ev = await addCaseEvent(userId, caseId, {
+        kind: 'call',
+        title: `Call ${who} at ${fact.value_text}`.slice(0, 200),
+        details: `Requested in court mail${m?.subject ? ` "${m.subject}"` : ''}:\n${fact.span}`.slice(0, 8000),
+        occurredOn: when,
+        occurredTime: fact.value_at ? localTimeOf(fact.value_at) : time,
+        location: '',
+        people: who.slice(0, 500),
+        phone: fact.value_text.slice(0, 60),
+        source: 'mail',
+        sourceRef: fact.message_id,
+      });
+      if (ev) applied.eventId = ev.id;
+    }
+    return applied;
+  }
   if (fact.kind === 'hearing_date' || fact.kind === 'hearing_time') {
     if (fact.value_at && !applied.appearanceId) {
       // Merge, never clobber: carry the existing appearance's
@@ -764,8 +849,11 @@ async function applyFactToCase(
         [caseId],
       );
       const ex = existing[0];
+      // The mail's "9:30 a.m." is wall-clock time where the user is.
+      const wall = new Date(fact.value_at).toISOString().slice(0, 16);
+      const tz = await userTimeZone(userId);
       const input: AppearanceInput = {
-        hearingAt: new Date(fact.value_at).toISOString(),
+        hearingAt: wallClockToIso(wall, tz) || new Date(fact.value_at).toISOString(),
         platform: (ex?.platform as AppearanceInput['platform']) || 'Other',
         joinUrl: ex?.join_url || '',
         phoneBackup: ex?.phone_backup || '',
@@ -775,12 +863,15 @@ async function applyFactToCase(
       if (app) applied.appearanceId = app.id;
     }
     if (fact.value_date && !applied.deadlineId) {
-      const d = await addDeadline(userId, caseId, {
-        type: 'hearing_date',
-        label: 'Hearing',
-        dueAt: fact.value_date,
-      });
-      if (d) applied.deadlineId = d.id;
+      const day = String(fact.value_date).slice(0, 10);
+      if (!(await existingDeadlineId(caseId, 'hearing_date', day))) {
+        const d = await addDeadline(userId, caseId, {
+          type: 'hearing_date',
+          label: 'Hearing',
+          dueAt: day,
+        });
+        if (d) applied.deadlineId = d.id;
+      }
     }
     return applied;
   }
@@ -789,6 +880,8 @@ async function applyFactToCase(
       const typeKey =
         fact.kind === 'response_due' ? 'response_due' : fact.kind === 'discovery_due' ? 'discovery_due' : 'compliance_due';
       const meta = deadlineType(typeKey);
+      const day = String(fact.value_date).slice(0, 10);
+      if (await existingDeadlineId(caseId, meta?.key || typeKey, day)) return applied;
       const d = await addDeadline(userId, caseId, {
         type: meta?.key || typeKey,
         label: FACT_DEADLINE_LABEL[fact.kind] || meta?.label || 'Deadline from court mail',
@@ -799,6 +892,7 @@ async function applyFactToCase(
     return applied;
   }
   if (fact.kind === 'trial_date' && fact.value_date && !applied.deadlineId) {
+    if (await existingDeadlineId(caseId, 'hearing_date', String(fact.value_date).slice(0, 10))) return applied;
     const d = await addDeadline(userId, caseId, {
       type: 'hearing_date',
       label: 'Trial date',
@@ -837,7 +931,7 @@ export async function confirmFact(
   userId: string,
   messageId: string,
   factId: string,
-  opts: { valueText?: string; valueDate?: string | null } = {},
+  opts: { valueText?: string; valueDate?: string | null; auto?: boolean } = {},
 ): Promise<ExtractedFact | null> {
   await ensureSchema();
   const rows = await query<FactRow>(
@@ -883,6 +977,7 @@ export async function confirmFact(
       if (comm) applied.commId = comm.id;
     }
   }
+  if (opts.auto) applied.auto = true;
   const upd = await query<FactRow>(
     `UPDATE extracted_facts
      SET status = 'confirmed', decided_at = now(), applied = $4,
@@ -905,6 +1000,257 @@ export async function dismissFact(
     [factId, messageId, userId],
   );
   return rows.length > 0;
+}
+
+function utcDay(v: string | undefined): string {
+  const d = v ? new Date(v) : new Date();
+  return (Number.isNaN(d.getTime()) ? new Date() : d).toISOString().slice(0, 10);
+}
+
+/** "HH:MM" from a stored local wall-clock timestamp (the parser
+ *  writes value_at without a zone, so read it back the same way). */
+function localTimeOf(v: string): string | null {
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+/** Remove a fact that was added to a case: deletes the deadline or
+ *  call event it created and marks the fact dismissed. */
+export async function undoFact(
+  userId: string,
+  messageId: string,
+  factId: string,
+): Promise<boolean> {
+  await ensureSchema();
+  const rows = await query<FactRow>(
+    `SELECT * FROM extracted_facts WHERE id = $1 AND message_id = $2 AND user_id = $3`,
+    [factId, messageId, userId],
+  );
+  const f = rows[0];
+  if (!f) return false;
+  const applied = f.applied || {};
+  const caseId = f.case_id;
+  if (caseId && typeof applied.deadlineId === 'string') {
+    await deleteDeadline(userId, caseId, applied.deadlineId).catch(() => false);
+  }
+  if (caseId && typeof applied.eventId === 'string') {
+    await deleteCaseEvent(userId, caseId, applied.eventId).catch(() => false);
+  }
+  if (caseId && f.kind === 'join_link') {
+    await query(`UPDATE appearances SET join_url = '' WHERE case_id = $1 AND join_url = $2`, [caseId, f.value_text]);
+  }
+  await query(
+    `UPDATE extracted_facts SET status = 'dismissed', decided_at = now(), applied = '{}'::jsonb
+     WHERE id = $1 AND user_id = $2`,
+    [factId, userId],
+  );
+  return true;
+}
+
+export async function userTimeZone(userId: string): Promise<string> {
+  const rows = await query<{ time_zone: string | null }>(
+    `SELECT time_zone FROM users WHERE id = $1`,
+    [userId],
+  ).catch(() => [] as { time_zone: string | null }[]);
+  return validTimeZone(rows[0]?.time_zone) || DEFAULT_TIME_ZONE;
+}
+
+export async function setUserTimeZone(userId: string, tz: string): Promise<void> {
+  const ok = validTimeZone(tz);
+  if (!ok) return;
+  await query(
+    `UPDATE users SET time_zone = $2 WHERE id = $1 AND time_zone IS DISTINCT FROM $2`,
+    [userId, ok],
+  );
+}
+
+export async function getInboxSettings(userId: string): Promise<{ autoApply: boolean }> {
+  await ensureSchema();
+  const rows = await query<{ inbox_auto_apply: boolean }>(
+    `SELECT inbox_auto_apply FROM users WHERE id = $1`,
+    [userId],
+  );
+  return { autoApply: rows[0]?.inbox_auto_apply !== false };
+}
+
+export async function setInboxAutoApply(userId: string, on: boolean): Promise<void> {
+  await ensureSchema();
+  await query(`UPDATE users SET inbox_auto_apply = $2 WHERE id = $1`, [userId, on]);
+}
+
+const ACTIONABLE_KINDS = new Set([
+  'hearing_date', 'hearing_time', 'trial_date', 'response_due', 'deadline', 'discovery_due',
+  'join_link', 'callback_phone', 'case_number',
+]);
+
+/** Case title for a case started from mail: the caption ("Smith v.
+ *  Jones") when the message has one, else its subject. */
+function titleFromMessage(subject: string, body: string): string {
+  const cap = `${subject}\n${body}`.match(/([A-Z][A-Za-z.'&-]+(?:\s+[A-Z][A-Za-z.'&-]+){0,3})\s+v\.?s?\.?\s+([A-Z][A-Za-z.'&-]+(?:\s+[A-Z][A-Za-z.'&-]+){0,3})/);
+  if (cap) return `${cap[1].trim()} v. ${cap[2].trim()}`.slice(0, 200);
+  return (subject || 'Court mail').replace(/^\s*(re|fwd?|fw)\s*:\s*/i, '').slice(0, 200) || 'Court mail';
+}
+
+/** Add a message's facts to its case without a confirmation step:
+ *  find (or start) the case, then confirm each high- and
+ *  medium-confidence fact through the same writers the review queue
+ *  uses. Returns how many facts were added. `force` runs even when
+ *  the user has switched automatic adding off (a button press). */
+export async function autoApplyMessage(
+  userId: string,
+  messageId: string,
+  opts: { force?: boolean } = {},
+): Promise<{ applied: number; caseId: string | null; createdCase: boolean }> {
+  await ensureSchema();
+  const none = { applied: 0, caseId: null, createdCase: false };
+  if (!opts.force && !(await getInboxSettings(userId)).autoApply) return none;
+  const msgs = await query<{
+    case_id: string | null; auth_warning: boolean; subject: string; body_text: string; folder: string | null;
+  }>(
+    `SELECT case_id, auth_warning, subject, body_text, NULL::text AS folder
+     FROM inbound_messages WHERE id = $1 AND user_id = $2`,
+    [messageId, userId],
+  );
+  const msg = msgs[0];
+  if (!msg) return none;
+  // Mail that failed the sender checks may not be from the court.
+  if (msg.auth_warning && !opts.force) return none;
+  const facts = await query<FactRow>(
+    `SELECT * FROM extracted_facts WHERE message_id = $1 AND user_id = $2 AND status = 'proposed'
+     ORDER BY created_at ASC`,
+    [messageId, userId],
+  );
+  const usable = facts.filter((f) => f.confidence !== 'low' && f.kind !== 'mentioned_date');
+  if (!usable.length) return { ...none, caseId: msg.case_id };
+
+  let caseId = msg.case_id;
+  let createdCase = false;
+  if (!caseId) {
+    const actionable = usable.some((f) => ACTIONABLE_KINDS.has(f.kind));
+    if (!actionable) return none;
+    const numFact = usable.find((f) => f.kind === 'case_number');
+    const active = await query<{ id: string }>(
+      `SELECT id FROM cases WHERE user_id = $1 AND status <> 'Draft' AND status <> 'Closed'`,
+      [userId],
+    ).catch(() => [] as { id: string }[]);
+    if (numFact) {
+      const courtFact = usable.find((f) => f.kind === 'court_name');
+      const created = await createCase(userId, {
+        title: titleFromMessage(msg.subject, msg.body_text),
+        subjectName: '',
+        relation: 'self',
+        courtName: courtFact ? courtFact.value_text.slice(0, 200) : '',
+        county: '',
+        state: '',
+        caseNumber: numFact.value_text.slice(0, 80),
+      });
+      caseId = created.id;
+      createdCase = true;
+    } else if (active.length === 1) {
+      caseId = active[0].id;
+    } else {
+      return none;
+    }
+  }
+  await assignMessageToCase(userId, messageId, caseId);
+
+  // A hearing's date and time arrive as two facts; when both are
+  // present, the combined date (with its time) is the one to add.
+  const hearingWithTime = usable.find((f) => f.kind === 'hearing_date' && f.value_at);
+  let n = 0;
+  for (const f of usable) {
+    if (f.kind === 'hearing_time' && hearingWithTime) {
+      await query(
+        `UPDATE extracted_facts SET status = 'confirmed', decided_at = now(),
+                applied = '{"auto":true,"recorded":true}'::jsonb, case_id = $3
+         WHERE id = $1 AND user_id = $2`,
+        [f.id, userId, caseId],
+      );
+      n++;
+      continue;
+    }
+    const done = await confirmFact(userId, messageId, f.id, { auto: true });
+    if (done) n++;
+  }
+  return { applied: n, caseId, createdCase };
+}
+
+/** Re-read mail already in the inbox and add what it finds (the
+ *  "Add details from mail you already received" button). Re-parses
+ *  messages whose facts predate the newer extractors. */
+export async function applyExistingMail(
+  userId: string,
+  ids?: string[],
+): Promise<{ messages: number; applied: number; casesCreated: number }> {
+  await ensureSchema();
+  const rows = await query<{ id: string }>(
+    ids && ids.length
+      ? `SELECT id FROM inbound_messages WHERE user_id = $1 AND id = ANY($2::uuid[])`
+      : `SELECT id FROM inbound_messages WHERE user_id = $1 AND deleted_at IS NULL
+         ORDER BY received_at ASC LIMIT 200`,
+    ids && ids.length ? [userId, ids] : [userId],
+  );
+  let applied = 0;
+  let casesCreated = 0;
+  for (const r of rows) {
+    // Pick up kinds the older parser did not know about (join links,
+    // call requests) without duplicating facts it already found.
+    await reparseNewKinds(userId, r.id);
+    const res = await autoApplyMessage(userId, r.id, { force: true });
+    applied += res.applied;
+    if (res.createdCase) casesCreated++;
+  }
+  return { messages: rows.length, applied, casesCreated };
+}
+
+async function reparseNewKinds(userId: string, messageId: string): Promise<void> {
+  const rows = await query<{
+    subject: string; body_text: string; headers: Record<string, unknown>;
+    from_email: string; from_name: string; case_id: string | null;
+  }>(
+    `SELECT subject, body_text, headers, from_email, from_name, case_id
+     FROM inbound_messages WHERE id = $1 AND user_id = $2`,
+    [messageId, userId],
+  );
+  const msg = rows[0];
+  if (!msg) return;
+  const have = await query<{ kind: string; value_text: string }>(
+    `SELECT kind, value_text FROM extracted_facts WHERE message_id = $1`,
+    [messageId],
+  );
+  const seen = new Set(have.map((h) => `${h.kind}|${h.value_text}`));
+  const result = extractFromMessage({
+    subject: msg.subject,
+    bodyText: msg.body_text,
+    headers: msg.headers || {},
+    fromEmail: msg.from_email,
+    fromName: msg.from_name,
+    userCases: await userCasesForParse(userId),
+  });
+  for (const f of result.facts) {
+    if (seen.has(`${f.kind}|${f.valueText}`)) continue;
+    await query(
+      `INSERT INTO extracted_facts
+         (message_id, user_id, case_id, kind, value_text, value_date, value_at,
+          confidence, span, span_offset, basis)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [
+        messageId, userId, msg.case_id, f.kind, f.valueText,
+        f.valueDate, f.valueAt, f.confidence, f.span, f.spanOffset, f.basis,
+      ],
+    );
+  }
+  if (!msg.case_id && result.matchedCaseId) {
+    await query(
+      `UPDATE inbound_messages SET case_id = $3, case_match = 'proposed' WHERE id = $1 AND user_id = $2`,
+      [messageId, userId, result.matchedCaseId],
+    );
+    await query(`UPDATE extracted_facts SET case_id = $3 WHERE message_id = $1 AND user_id = $2 AND case_id IS NULL`,
+      [messageId, userId, result.matchedCaseId]);
+  }
 }
 
 export async function setMessageStatus(

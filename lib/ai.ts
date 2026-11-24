@@ -100,3 +100,42 @@ export async function rewriteProfessionally(
   }
   return { ok: true, items: out };
 }
+
+/** A general JSON chat call for the live helpers (the call
+ *  companion). Returns the parsed object, or null when the model is
+ *  not configured or the call fails — callers always have a
+ *  non-AI fallback. */
+export async function chatJson<T = unknown>(
+  system: string,
+  user: string,
+  opts: { timeoutMs?: number; temperature?: number } = {},
+): Promise<T | null> {
+  const apiKey = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+  const base = (process.env.AI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const model = process.env.AI_MODEL || 'gpt-4o-mini';
+  try {
+    const res = await fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        temperature: opts.temperature ?? 0.2,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      }),
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 20_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => null)) as {
+      choices?: { message?: { content?: string } }[];
+    } | null;
+    const content = data?.choices?.[0]?.message?.content || '';
+    return JSON.parse(content.replace(/^```(?:json)?\s*|\s*```$/g, '')) as T;
+  } catch {
+    return null;
+  }
+}

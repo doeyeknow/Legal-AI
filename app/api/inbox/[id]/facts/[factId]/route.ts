@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, dbUnavailable, notFound, cleanStr, cleanDate } from '@/lib/api-guard';
-import { confirmFact, dismissFact } from '@/lib/inbox';
+import { confirmFact, dismissFact, undoFact } from '@/lib/inbox';
 
 // POST /api/inbox/[id]/facts/[factId] {action: 'confirm'|'dismiss',
 // valueText?, valueDate?} — the user's decision on one proposed
@@ -22,6 +22,13 @@ export async function POST(
   try {
     if (body.action === 'dismiss') {
       const ok = await dismissFact(auth.user.id, params.id, params.factId);
+      if (!ok) return notFound();
+      return NextResponse.json({ ok: true });
+    }
+    if (body.action === 'undo') {
+      // Take an added fact back off the case (deletes the deadline or
+      // call it created).
+      const ok = await undoFact(auth.user.id, params.id, params.factId);
       if (!ok) return notFound();
       return NextResponse.json({ ok: true });
     }

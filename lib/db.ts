@@ -387,6 +387,35 @@ export function ensureSchema(): Promise<void> {
       await query(
         `CREATE INDEX IF NOT EXISTS case_events_case_idx ON case_events (case_id, occurred_on, occurred_time)`,
       );
+      // Calendar extras (add-only): calls to make carry a phone
+      // number, events created from court mail or a call remember
+      // where they came from, and an event can be ticked off.
+      for (const col of [
+        `phone TEXT NOT NULL DEFAULT ''`,
+        `join_url TEXT NOT NULL DEFAULT ''`,
+        `source TEXT NOT NULL DEFAULT 'user'`,
+        `source_ref TEXT`,
+        `done BOOLEAN NOT NULL DEFAULT false`,
+      ]) {
+        await query(`ALTER TABLE case_events ADD COLUMN IF NOT EXISTS ${col}`);
+      }
+      // Remote-appearance details read from court mail.
+      for (const col of [
+        `meeting_id TEXT NOT NULL DEFAULT ''`,
+        `passcode TEXT NOT NULL DEFAULT ''`,
+        `dial_in TEXT NOT NULL DEFAULT ''`,
+        `instructions TEXT NOT NULL DEFAULT ''`,
+      ]) {
+        await query(`ALTER TABLE appearances ADD COLUMN IF NOT EXISTS ${col}`);
+      }
+      // Court mail: add the details it finds to the case without a
+      // confirmation step (the user can switch this off).
+      await query(
+        `ALTER TABLE users ADD COLUMN IF NOT EXISTS inbox_auto_apply BOOLEAN NOT NULL DEFAULT true`,
+      );
+      // The user's time zone, as their browser reports it — court mail
+      // times ("9:30 a.m.") are read in it.
+      await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS time_zone TEXT`);
     })().catch((err) => {
       globalThis.__legalSchemaReady = undefined;
       throw err;

@@ -35,6 +35,8 @@ interface Entry {
   href?: string;
   done?: boolean;
   event?: CaseEvent;
+  joinUrl?: string;
+  phone?: string;
 }
 
 const KIND_ICON: Record<string, IconName> = {
@@ -47,6 +49,7 @@ const KIND_ICON: Record<string, IconName> = {
   payment: 'wallet',
   evidence: 'shield',
   note: 'pencil',
+  call: 'phone',
   case: 'folder',
   document: 'doc',
   deadline: 'calendar',
@@ -114,8 +117,13 @@ function buildEntries(data: CaseDetailT): Entry[] {
     out.push({
       id: `ev-${e.id}`, source: 'event', kind: e.kind, date: e.occurredOn, time: e.occurredTime,
       title: e.title, details: e.details,
-      meta: [e.location && `At ${e.location}`, e.people && `With ${e.people}`].filter(Boolean) as string[],
-      tag: kindLabel(e.kind), event: e,
+      meta: [
+        e.location && `At ${e.location}`, e.people && `With ${e.people}`,
+        e.source === 'mail' ? 'From court mail' : e.source === 'call' ? 'Heard on a call' : '',
+        e.done ? 'Done' : '',
+      ].filter(Boolean) as string[],
+      tag: kindLabel(e.kind), event: e, done: e.done,
+      joinUrl: e.joinUrl || undefined, phone: e.phone || undefined,
     });
   }
   for (const d of data.documents) {
@@ -171,9 +179,15 @@ function buildEntries(data: CaseDetailT): Entry[] {
     out.push({
       id: `hr-${a.id}`, source: 'hearing', kind: 'hearing', date: p.date, time: p.time,
       title: 'Hearing',
-      details: '',
-      meta: [a.platform && `On ${a.platform}`, a.phoneBackup && `Phone backup ${a.phoneBackup}`].filter(Boolean) as string[],
+      meta: [
+        a.platform && `On ${a.platform}`,
+        a.meetingId && `Meeting ${a.meetingId}`,
+        a.passcode && `Passcode ${a.passcode}`,
+        (a.dialIn || a.phoneBackup) && `By phone ${a.dialIn || a.phoneBackup}`,
+      ].filter(Boolean) as string[],
+      details: a.instructions || '',
       tag: 'Hearing', href: `${base}#hearing`,
+      joinUrl: a.joinUrl || undefined,
     });
   }
   return out;
@@ -188,7 +202,7 @@ function matches(e: Entry, f: Filter): boolean {
 }
 
 const EMPTY_FORM = {
-  kind: 'incident', title: '', details: '', occurredOn: '', occurredTime: '', location: '', people: '',
+  kind: 'incident', title: '', details: '', occurredOn: '', occurredTime: '', location: '', people: '', phone: '',
 };
 
 export default function CaseTimeline({
@@ -238,7 +252,7 @@ export default function CaseTimeline({
   function openEdit(e: CaseEvent) {
     setForm({
       kind: e.kind, title: e.title, details: e.details, occurredOn: e.occurredOn,
-      occurredTime: e.occurredTime || '', location: e.location, people: e.people,
+      occurredTime: e.occurredTime || '', location: e.location, people: e.people, phone: e.phone || '',
     });
     setErr(null);
     setEditing(e);
@@ -370,6 +384,25 @@ export default function CaseTimeline({
           {e.meta.length > 0 && <p className="tl-meta">{e.meta.join(' · ')}</p>}
           {e.details && (
             <p className={`tl-details${long && !open ? ' clamp' : ''}`}>{e.details}</p>
+          )}
+          {(e.joinUrl || e.phone) && !e.done && (
+            <div className="tl-callbtns">
+              {e.joinUrl && (
+                <a className="btn small primary" href={e.joinUrl} target="_blank" rel="noopener noreferrer">
+                  <Icon name="video" size={14} /> Join
+                </a>
+              )}
+              {e.phone && (
+                <a className="btn small primary" href={`tel:${e.phone.replace(/[^\d+]/g, '')}`}>
+                  <Icon name="phone" size={14} /> Call {e.phone}
+                </a>
+              )}
+              {e.event?.kind === 'call' && (
+                <Link className="btn small ghost" href={`/dashboard/hearing-live?case=${data.id}&call=${e.event.id}`}>
+                  <Icon name="headphones" size={14} /> Call with hearing companion
+                </Link>
+              )}
+            </div>
           )}
           <div className="tl-actions">
             {long && (
@@ -515,6 +548,12 @@ export default function CaseTimeline({
               <label htmlFor="ev-people">Who was involved (optional)</label>
               <input id="ev-people" value={form.people} maxLength={500} onChange={(e) => setForm({ ...form, people: e.target.value })} />
             </div>
+            {(form.kind === 'call' || form.phone) && (
+              <div className="field">
+                <label htmlFor="ev-phone">Phone number to call</label>
+                <input id="ev-phone" type="tel" value={form.phone} maxLength={60} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              </div>
+            )}
           </div>
           {err && <p className="error">{err}</p>}
           <div className="choices">

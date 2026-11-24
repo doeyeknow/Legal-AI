@@ -916,35 +916,166 @@ main:has(.finderwin) { overflow: hidden; padding: 0; max-width: none; }
 .proprows dt { font-size: 13px; color: var(--ink2); }
 .proprows dd { margin: 0; font-size: 14.5px; }
 
-/* Calendar view (components/CalendarView.tsx). */
+/* Calendar view (components/CalendarView.tsx, CalendarParts.tsx). */
 .calview-head { display: flex; align-items: center; gap: 8px; }
 .calview-head .btn { margin: 0; }
 .calview-title { flex: 1; margin: 0; font-size: 19px; }
 .calview-dow {
-  display: grid; grid-template-columns: repeat(7, 1fr); margin-top: 12px;
-  font-size: 11.5px; font-weight: bold; color: var(--ink2); text-align: right; padding: 0 8px;
+  display: grid; grid-template-columns: repeat(7, 1fr); margin-top: 10px;
+  font-size: 11.5px; font-weight: bold; color: var(--ink2); padding: 0 8px 4px;
 }
 .calview-grid {
-  display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; padding: 0 4px;
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; padding: 0 4px;
 }
 .calview-day {
-  position: relative; min-height: 52px; border-radius: 10px; padding: 6px 8px;
+  position: relative; min-height: 84px; border-radius: 10px; padding: 6px 7px;
   background: var(--card); border: 1px solid var(--line);
   font-family: inherit; color: var(--ink); text-align: left; cursor: pointer;
+  display: flex; flex-direction: column; gap: 3px; min-width: 0; overflow: hidden;
 }
 .calview-day.dim { opacity: 0.4; }
 .calview-day:hover { border-color: var(--fieldline); }
 .calview-day.sel { border-color: var(--gold); background: rgba(217, 166, 46, 0.08); }
-.calview-day.today .calview-num { color: var(--gold); font-weight: bold; }
-.calview-num { font-size: 13px; }
-.calview-dot {
-  position: absolute; left: 8px; width: 6px; height: 6px; border-radius: 50%;
-  background: var(--gold); box-shadow: 0 0 0 2px rgba(217, 166, 46, 0.2);
+.calview-day.today .calview-num { color: var(--paper); background: var(--gold); font-weight: bold; }
+.calview-num {
+  font-size: 13px; align-self: flex-start; min-width: 22px; height: 22px; line-height: 22px;
+  text-align: center; border-radius: 11px;
 }
-@media (max-width: 560px) {
-  .calview-day { min-height: 42px; padding: 4px 6px; }
-  .calview-dot { width: 5px; height: 5px; }
+.calview-chips { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.calchip {
+  display: block; font-size: 11px; line-height: 1.3; padding: 1px 5px; border-radius: 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  background: rgba(236, 236, 241, 0.08); color: var(--ink);
+  border-left: 3px solid var(--ink2);
 }
+.calchip.more { border-left: 0; background: none; color: var(--ink2); padding-left: 2px; }
+.calchip.tone-hearing { border-left-color: var(--gold); background: rgba(217, 166, 46, 0.14); }
+.calchip.tone-deadline { border-left-color: #E5736B; background: rgba(229, 115, 107, 0.12); }
+.calchip.tone-call { border-left-color: #6FA8F0; background: rgba(111, 168, 240, 0.12); }
+.calchip.tone-event { border-left-color: #8E95A6; }
+@media (max-width: 640px) {
+  .calview-day { min-height: 48px; padding: 4px; align-items: center; }
+  .calview-num { align-self: center; }
+  .calview-chips { display: none; }
+  .calview-day.has::after {
+    content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--gold);
+  }
+}
+
+/* Dots + legend shared by the compact and mini months. */
+.caldots { display: flex; gap: 3px; justify-content: center; min-height: 5px; }
+.caldot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--ink2); }
+.caldot.tone-hearing { background: var(--gold); }
+.caldot.tone-deadline { background: #E5736B; }
+.caldot.tone-call { background: #6FA8F0; }
+.caldot.tone-event { background: #8E95A6; }
+.callegend {
+  display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 6px 8px;
+  font-size: 12px; color: var(--ink2);
+}
+.callegend span { display: inline-flex; align-items: center; gap: 6px; }
+.callegend .caldot { width: 8px; height: 8px; }
+
+/* Compact month on the dashboard. */
+.calcompact-dow, .calcompact-grid {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px;
+}
+.calcompact-dow { font-size: 11px; color: var(--ink2); text-align: center; font-weight: bold; margin-bottom: 2px; }
+.calcompact-day {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  height: 38px; border-radius: 8px; border: 1px solid transparent; background: none;
+  color: var(--ink); font-family: inherit; cursor: pointer; padding: 0;
+}
+.calcompact-day:hover { background: rgba(236, 236, 241, 0.06); }
+.calcompact-day.dim { opacity: 0.35; }
+.calcompact-day.sel { border-color: var(--gold); }
+.calcompact-num { font-size: 13px; width: 24px; height: 24px; line-height: 24px; text-align: center; border-radius: 12px; }
+.calcompact-day.today .calcompact-num { background: var(--gold); color: var(--paper); font-weight: bold; }
+
+/* Mini month in the sidebar. */
+.sidecal { margin: 0 4px 4px; padding: 6px 6px 8px; border-radius: 10px; background: rgba(236, 236, 241, 0.03); border: 1px solid var(--line); }
+.sidecal-head { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; font-weight: bold; margin-bottom: 4px; }
+.sidecal-head .iconbtn { width: 24px; height: 24px; }
+.calmini-dow, .calmini-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.calmini-dow { font-size: 9.5px; color: var(--ink2); text-align: center; margin-bottom: 1px; }
+.calmini-day {
+  display: flex; flex-direction: column; align-items: center; height: 24px;
+  border-radius: 6px; color: var(--ink); text-decoration: none; padding-top: 2px;
+}
+.calmini-day:hover { background: rgba(236, 236, 241, 0.08); }
+.calmini-day.dim { opacity: 0.32; }
+.calmini-num { font-size: 10.5px; line-height: 14px; width: 16px; text-align: center; border-radius: 8px; }
+.calmini-day.today .calmini-num { background: var(--gold); color: var(--paper); font-weight: bold; }
+.calmini-day .caldots { gap: 2px; }
+.calmini-day .caldot { width: 3.5px; height: 3.5px; }
+.sidecal-link {
+  display: flex; align-items: center; gap: 6px; margin-top: 6px; padding: 6px 6px;
+  font-size: 12.5px; color: var(--gold); text-decoration: none; border-radius: 6px;
+}
+.sidecal-link:hover { background: rgba(217, 166, 46, 0.1); }
+
+/* Dashboard calendar card. */
+.dashcal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dashcal-head h2 { margin: 0; }
+.dashcal-head .btn { margin: 0; }
+.dashcal-body {
+  display: grid; grid-template-columns: minmax(240px, 300px) 1fr; gap: 16px; margin-top: 10px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px;
+}
+.dashcal-monthhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 14px; }
+.dashcal-agenda { min-width: 0; }
+.dashcal-agendahead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dashcal-agendahead h3 { margin: 2px 0 8px; font-size: 15px; }
+@media (max-width: 720px) {
+  .dashcal-body { grid-template-columns: 1fr; }
+}
+
+/* Agenda rows (calendar page + dashboard card). */
+.agendalist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.agendaitem {
+  display: flex; gap: 10px; align-items: flex-start; padding: 10px 10px 10px 0;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+}
+.dashcal .agendaitem { background: rgba(236, 236, 241, 0.03); }
+.agendaitem.done { opacity: 0.55; }
+.agendaitem.done .agendatitle { text-decoration: line-through; }
+.agendabar { flex: none; width: 4px; align-self: stretch; border-radius: 0 3px 3px 0; background: var(--ink2); margin-left: 0; }
+.agendabar.tone-hearing { background: var(--gold); }
+.agendabar.tone-deadline { background: #E5736B; }
+.agendabar.tone-call { background: #6FA8F0; }
+.agendamain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.agendameta { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--ink2); }
+.agendakind { font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; }
+.tone-hearing .agendakind { color: var(--gold); }
+.tone-deadline .agendakind { color: #E5736B; }
+.tone-call .agendakind { color: #6FA8F0; }
+.agendatitle { font-size: 14.5px; overflow-wrap: anywhere; }
+.agendacase { font-size: 13px; color: var(--ink2); }
+.agendaactions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.agendaactions .btn { margin: 0; }
+.agendamore { align-self: flex-start; margin-top: 4px; font-size: 13px; }
+.agendadetails {
+  display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 6px 0 0;
+  font-size: 13px;
+}
+.agendadetails dt { color: var(--ink2); }
+.agendadetails dd { margin: 0; overflow-wrap: anywhere; }
+.agendadone {
+  flex: none; width: 30px; height: 30px; border-radius: 15px; border: 1px solid var(--line);
+  background: none; color: var(--ink2); cursor: pointer; display: grid; place-items: center;
+}
+.agendadone:hover { border-color: var(--gold); color: var(--gold); }
+.agendadone.on { background: var(--gold); border-color: var(--gold); color: var(--paper); }
+.prewrap { white-space: pre-wrap; }
+
+/* Court-mail auto-add settings and added-fact rows (InboxPage). */
+.autoapply { display: flex; flex-direction: column; gap: 10px; margin: 6px 0 16px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.autoapply .btn { margin: 0; align-self: flex-start; }
+.toggleline { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.toggleline input { margin-top: 3px; accent-color: var(--gold); width: 18px; height: 18px; flex: none; }
+.addedfact { align-items: flex-start; }
+.addedfact .btn { margin: 0 0 0 auto; flex: none; }
+.addedfact-text { min-width: 0; overflow-wrap: anywhere; flex: 1; }
 
 /* Finder on phones: the sidebar becomes an overlay opened from
    the chrome bar's toggle; the window drops its border radii. */
@@ -1808,3 +1939,29 @@ main:has(.homepage) { max-width: none; padding: 0; scroll-behavior: smooth; }
 .infobtn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .modalbody .inboxinfo { font-size: 15.5px; margin: 0 0 12px; max-width: none; }
 .modalbody .acctcard { margin: 0; }
+
+/* Hearing companion — call mode (components/CallCompanion.tsx). */
+.callhead {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px;
+}
+.callhead-icon {
+  width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; flex: none;
+  background: rgba(111, 168, 240, 0.14); color: #6FA8F0;
+}
+.callhead-texts { flex: 1; min-width: 200px; }
+.callhead-texts h2 { margin: 2px 0; font-size: 19px; overflow-wrap: anywhere; }
+.callhead-texts .agendakind { color: #6FA8F0; margin: 0; }
+.callhead .btn { margin: 0; }
+.callreq { margin: 8px 2px 0; }
+.livewarn ul { margin: 6px 0 0; padding-left: 18px; }
+.livewarn li { margin: 4px 0; }
+.callgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
+@media (max-width: 760px) { .callgrid { grid-template-columns: 1fr; } }
+.callsay { font-size: 15px; margin: 4px 0 6px; color: #fff; }
+.callnote { margin-top: 12px; }
+.callnote-row { display: flex; gap: 8px; align-items: center; }
+.callnote-row input { flex: 1; }
+.callnote-row .btn { margin: 0; flex: none; }
+.callend { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.callend .btn { margin: 0; }

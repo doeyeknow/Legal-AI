@@ -14,9 +14,15 @@ export type IconName =
   | 'help' | 'dots' | 'download' | 'printer' | 'share' | 'trash'
   | 'pencil' | 'info' | 'backspace' | 'eye' | 'reply' | 'forward'
   | 'archive' | 'unarchive' | 'star' | 'starFill' | 'mailOpen' | 'restore'
-  | 'inbox' | 'chevronLeft' | 'chevronRight' | 'sparkle' | 'refresh' | 'paperclip';
+  | 'inbox' | 'chevronLeft' | 'chevronRight' | 'sparkle' | 'refresh' | 'paperclip' | 'video';
 
 const P: Record<IconName, ReactNode> = {
+  video: (
+    <>
+      <rect x="3" y="6.5" width="12.5" height="11" rx="2" />
+      <path d="M15.5 10.5 21 7.5v9l-5.5-3" />
+    </>
+  ),
   backspace: (
     <>
       <path d="M8.5 5h11a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-1.5 1.5h-11L3 12Z" />

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon, type IconName } from './icons';
 import { useUnreadCount, badgeLabel } from '@/lib/unread-store';
+import { SidebarMiniCalendar } from './DashboardCalendar';
 
 /** The dashboard as a Mac-Finder-style window: a slim chrome bar
  *  with traffic lights and the current view's name, a translucent
@@ -249,6 +250,8 @@ export default function FinderShell({ children }: { children: ReactNode }) {
       <div className="finderbody">
         <aside ref={sideRef} className={`finderside${navOpen ? ' open' : ''}`} aria-label="Views">
           {nav(FAVORITES, 'Favorites')}
+          <p className="sidesection">Calendar</p>
+          <SidebarMiniCalendar onNavigate={() => setNavOpen(false)} />
           {nav(TOOLS, 'Tools')}
           <p className="sidefoot">Saved to your account, visible only to you.</p>
         </aside>

@@ -146,7 +146,7 @@ function classify(subject: string, body: string, fromEmail: string): string {
 // and "validated" (exactly matches one of the user's own cases,
 // via the same normalization cases_user_number_idx supports).
 const CASE_TOKEN_RE =
-  /\b(?:[A-Z]-\d{3}-[A-Z]{2}-\d{4}-\d{2,6}|\d{1,2}:\d{2}-[a-z]{2}-\d{3,6}|[A-Z0-9]{1,5}(?:-[A-Z0-9]{1,6}){2,5}|\d{5,})\b/gi;
+  /\b(?:[A-Z]{1,4}\d{2,4}-\d{3,8}|[A-Z]-\d{3}-[A-Z]{2}-\d{4}-\d{2,6}|\d{1,2}:\d{2}-[a-z]{2}-\d{3,6}|[A-Z0-9]{1,5}(?:-[A-Z0-9]{1,6}){2,5}|\d{5,})\b/gi;
 
 function caseCandidates(text: string): { token: string; offset: number }[] {
   const out: { token: string; offset: number }[] = [];
@@ -514,6 +514,12 @@ export function extractFromMessage(input: ParseInput): ParseResult {
     });
   }
 
+  // ---- Remote appearance: join link, meeting ID, passcode -------
+  for (const f of remoteFacts(text)) push(f);
+
+  // ---- Call-back requests ("please call me at 555-123-4567") -----
+  for (const f of callbackFacts(text, dates)) push(f);
+
   // Weak case matching when no case number matched: sender/court or
   // party names echoing a case the user already tracks. Suggestion
   // only — the review queue asks, it never assigns on this alone.
@@ -529,4 +535,116 @@ export function extractFromMessage(input: ParseInput): ParseResult {
   }
 
   return { docType, facts, matchedCaseId, caseNumberFound, authWarning, isForward };
+}
+
+// ------------------------------------------------------------------
+// Remote hearings: video links (Webex, Zoom, Teams, Google Meet,
+// GoToMeeting, BlueJeans), the meeting number and passcode, a
+// dial-in line, and the court's instructions for appearing remotely.
+const MEETING_URL_RE =
+  /https?:\/\/[^\s<>"')\]]*(?:webex\.com|zoom\.us|zoomgov\.com|teams\.microsoft\.com|teams\.live\.com|meet\.google\.com|gotomeeting\.com|gotomeet\.me|bluejeans\.com)[^\s<>"')\]]*/gi;
+
+export function platformFromUrl(url: string): string {
+  const u = url.toLowerCase();
+  if (u.includes('webex')) return 'Webex';
+  if (u.includes('zoom')) return 'Zoom';
+  if (u.includes('teams.')) return 'Microsoft Teams';
+  if (u.includes('meet.google')) return 'Google Meet';
+  if (u.includes('goto')) return 'GoToMeeting';
+  if (u.includes('bluejeans')) return 'BlueJeans';
+  return 'Video';
+}
+
+const PHONE_RE = /(?:\+?1[\s.-]?)?\(?\b(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})\b(?:\s*(?:x|ext\.?|extension)\s*(\d{1,6}))?/gi;
+
+function fmtPhone(m: RegExpMatchArray): string {
+  return `(${m[1]}) ${m[2]}-${m[3]}${m[4] ? ` ext. ${m[4]}` : ''}`;
+}
+
+function simpleFact(kind: string, valueText: string, text: string, start: number, end: number, confidence: Confidence, basis = ''): ParsedFact {
+  const sp = spanAround(text, start, end);
+  return {
+    kind, valueText, valueDate: null, valueAt: null, confidence,
+    span: sp.span, spanOffset: sp.offset, basis, deadlineType: null, warning: null,
+  };
+}
+
+function remoteFacts(text: string): ParsedFact[] {
+  const out: ParsedFact[] = [];
+  const links = [...text.matchAll(MEETING_URL_RE)];
+  for (const m of links.slice(0, 2)) {
+    const url = m[0].replace(/[.,;:]+$/, '');
+    out.push(simpleFact('join_link', url, text, m.index ?? 0, (m.index ?? 0) + m[0].length, 'high', `${platformFromUrl(url)} link`));
+  }
+  const remoteWords = /(webex|zoom|teams|video|virtual(ly)?|remote(ly)?|appear\s+by\s+(video|phone)|join\s+the\s+(hearing|meeting))/i;
+  if (!links.length && !remoteWords.test(text)) return out;
+
+  const mid = text.match(/(?:meeting|event|access|webinar|conference)\s*(?:number|no\.?|id|#)\s*(?:\(access code\))?\s*[:#]?\s*((?:\d[\s-]?){8,12}\d)/i);
+  if (mid) {
+    const v = mid[1].replace(/\s+/g, ' ').trim();
+    out.push(simpleFact('meeting_id', v, text, mid.index ?? 0, (mid.index ?? 0) + mid[0].length, 'high'));
+  }
+  const pc = text.match(/(?:passcode|password|meeting password|pass code|pin)\s*[:#]?\s*([A-Za-z0-9!@#$%^&*._-]{3,24})/i);
+  if (pc && !/^(is|for|to|the)$/i.test(pc[1])) {
+    out.push(simpleFact('passcode', pc[1], text, pc.index ?? 0, (pc.index ?? 0) + pc[0].length, 'high'));
+  }
+  // Dial-in: a phone number on a line that talks about joining by phone.
+  for (const line of text.split(/\n/)) {
+    if (!/(dial|call[- ]in|join by phone|by telephone|audio|toll)/i.test(line)) continue;
+    const pm = [...line.matchAll(PHONE_RE)][0];
+    if (!pm) continue;
+    const off = text.indexOf(line);
+    out.push(simpleFact('dial_in', fmtPhone(pm), text, off, off + line.length, 'medium'));
+    break;
+  }
+  // Instructions: the paragraph(s) that explain how to appear remotely.
+  const paras = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  const instr = paras.filter((p) =>
+    /(appear|join|attend|log ?in|connect|participat)/i.test(p) &&
+    remoteWords.test(p) &&
+    p.length < 900,
+  );
+  if (instr.length) {
+    const val = instr.slice(0, 2).join('\n\n').replace(/[ \t]+/g, ' ').slice(0, 800);
+    const off = text.indexOf(instr[0]);
+    out.push(simpleFact('remote_instructions', val, text, off, off + instr[0].length, 'medium'));
+  }
+  return out;
+}
+
+// ------------------------------------------------------------------
+// Someone asking for a call back: the number they gave and, when the
+// same sentence names one, the day they asked for.
+function callbackFacts(text: string, dates: FoundDate[]): ParsedFact[] {
+  const out: ParsedFact[] = [];
+  const ask = /(please\s+(?:give\s+(?:me|us|our office)\s+a\s+)?call|call\s+(?:me|us|our office|my office)|give\s+(?:me|us)\s+a\s+(?:call|ring)|return\s+(?:my|this|our)\s+call|call\s+back|reach\s+(?:me|us)\s+at|contact\s+(?:me|us|our office)\s+(?:at|by phone)|call\s+(?:at|on)\s|phone\s+call|telephone\s+conference|schedule\s+a\s+call)/i;
+  const sentences = text.split(/(?<=[.!?])\s+|\n+/);
+  let cursor = 0;
+  for (const sen of sentences) {
+    const at = text.indexOf(sen, cursor);
+    cursor = at >= 0 ? at + sen.length : cursor;
+    if (!ask.test(sen)) continue;
+    let pm = [...sen.matchAll(PHONE_RE)][0];
+    let pmOff = at;
+    if (!pm) {
+      // The number is often on the next line ("Please call me.\n555-…").
+      const next = text.slice(cursor, cursor + 160);
+      const nm = [...next.matchAll(PHONE_RE)][0];
+      if (!nm) continue;
+      pm = nm;
+      pmOff = cursor;
+    }
+    const sStart = Math.max(0, at);
+    const d = dates.find((fd) => fd.start >= sStart - 10 && fd.start <= sStart + sen.length + 10);
+    const f = simpleFact('callback_phone', fmtPhone(pm), text, sStart, sStart + sen.length, 'high',
+      d ? `Asked for a call on ${longDate(d.dateStr)}${d.timeH !== null ? ` at ${longTime(d.timeH, d.timeM)}` : ''}` : 'Asked for a call back');
+    if (d) {
+      f.valueDate = d.dateStr;
+      f.valueAt = d.timeH !== null ? `${d.dateStr}T${pad(d.timeH)}:${pad(d.timeM)}:00` : null;
+    }
+    void pmOff;
+    out.push(f);
+    if (out.length >= 2) break;
+  }
+  return out;
 }

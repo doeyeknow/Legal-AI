@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import DashGate from './DashGate';
+import DashboardCalendar from './DashboardCalendar';
 import Modal from './Modal';
 import DocPreview, { type PreviewTarget } from './DocPreview';
 import ContextMenu, { type CtxAction } from './ContextMenu';
@@ -11,14 +12,13 @@ import ReplyBadge from './ReplyBadge';
 import { Icon } from './icons';
 import { localToday } from '@/lib/reply-state';
 import { useUnreadCount, badgeLabel } from '@/lib/unread-store';
-import type { CaseSummary, Deadline } from '@/lib/dashboard-types';
+import type { CaseSummary } from '@/lib/dashboard-types';
 import { deadlineType } from '@/lib/comm-templates';
 import { getMotion } from '@/lib/motions/match';
 import {
   newestDocumentId, documentPdfUrl, downloadPdf, printPdf, shareDocument,
 } from './finderActions';
 
-type Upcoming = Deadline & { caseTitle: string };
 
 function fmtDate(iso: string): string {
   const d = new Date(`${iso}T12:00:00`);
@@ -52,7 +52,6 @@ function FolderGlyph({ open }: { open?: boolean }) {
 function CaseFolders({ onRenamed }: { onRenamed: () => void }) {
   const router = useRouter();
   const [cases, setCases] = useState<CaseSummary[] | null>(null);
-  const [upcoming, setUpcoming] = useState<Upcoming[]>([]);
   const [mailCount, setMailCount] = useState(0);
   const unread = useUnreadCount();
   const [preview, setPreview] = useState<PreviewTarget | null>(null);
@@ -77,7 +76,6 @@ function CaseFolders({ onRenamed }: { onRenamed: () => void }) {
         return;
       }
       setCases(data.cases || []);
-      setUpcoming(data.upcoming || []);
     } catch {
       setError('Your cases could not be loaded.');
     }
@@ -237,8 +235,8 @@ function CaseFolders({ onRenamed }: { onRenamed: () => void }) {
           <span className="mailtexts">
             <strong>Court mail</strong>
             <span>
-              Mail from the court, read for the dates and facts your cases need — nothing is
-              added to a case until you confirm it.
+              Mail from the court, read for hearing dates, deadlines, join links, and call
+              requests — added to your cases and calendar automatically.
             </span>
           </span>
           {unread > 0 && <span className="statuspill new">{unread} new</span>}
@@ -246,26 +244,7 @@ function CaseFolders({ onRenamed }: { onRenamed: () => void }) {
         </Link>
       </section>
 
-      {upcoming.length > 0 && (
-        <section className="dashsection">
-          <h2>Coming up</h2>
-          <ul className="deadlinelist">
-            {upcoming.map((d) => (
-              <li key={d.id} className="deadlineitem">
-                <span className="duedate">{fmtDate(d.dueAt)}</span>
-                <span>
-                  <strong>{d.label || deadlineType(d.type)?.label || d.type}</strong>
-                  {' — '}
-                  <Link href={`/dashboard/cases/${d.caseId}`}>{d.caseTitle}</Link>
-                  {deadlineType(d.type)?.ifMissed && (
-                    <span className="fineprint block">If missed: {deadlineType(d.type)?.ifMissed}</span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <DashboardCalendar />
 
       <section className="dashsection">
         <h2>Your cases</h2>

@@ -15,6 +15,7 @@ import type {
   Relation,
   RemoteStatus,
   Watch,
+  CalendarItem,
 } from "./dashboard-types";
 import type { Answers, MotionDef } from "./motions/types";
 import { caseReplyState, utcToday } from "./reply-state";
@@ -81,6 +82,19 @@ interface WatchRow {
 interface AppearanceRow {
   id: string; case_id: string; hearing_at: string | null; platform: string;
   join_url: string; phone_backup: string; remote_status: string;
+  meeting_id?: string; passcode?: string; dial_in?: string; instructions?: string;
+}
+const APPEARANCE_COLS =
+  'id, case_id, hearing_at, platform, join_url, phone_backup, remote_status, meeting_id, passcode, dial_in, instructions';
+function rowToAppearance(a: AppearanceRow): Appearance {
+  return {
+    id: a.id, caseId: a.case_id,
+    hearingAt: a.hearing_at ? new Date(a.hearing_at).toISOString() : null,
+    platform: a.platform, joinUrl: a.join_url, phoneBackup: a.phone_backup,
+    remoteStatus: a.remote_status as RemoteStatus,
+    meetingId: a.meeting_id || '', passcode: a.passcode || '',
+    dialIn: a.dial_in || '', instructions: a.instructions || '',
+  };
 }
 
 function rowToSummary(r: CaseRow): CaseSummary {
@@ -256,7 +270,7 @@ export async function getCaseDetail(
     [caseId, userId],
   );
   const apps = await query<AppearanceRow>(
-    `SELECT id, case_id, hearing_at, platform, join_url, phone_backup, remote_status
+    `SELECT ${APPEARANCE_COLS}
      FROM appearances WHERE case_id = $1`,
     [caseId],
   );
@@ -323,17 +337,7 @@ export async function getCaseDetail(
       createdAt: new Date(w.created_at).toISOString(),
     })),
     appearance: apps[0]
-      ? {
-          id: apps[0].id,
-          caseId: apps[0].case_id,
-          hearingAt: apps[0].hearing_at
-            ? new Date(apps[0].hearing_at).toISOString()
-            : null,
-          platform: apps[0].platform,
-          joinUrl: apps[0].join_url,
-          phoneBackup: apps[0].phone_backup,
-          remoteStatus: apps[0].remote_status as RemoteStatus,
-        }
+      ? rowToAppearance(apps[0])
       : null,
     courtMail: mail.map((m) => ({
       id: m.id,
@@ -803,34 +807,49 @@ export async function upsertAppearance(
     joinUrl: string;
     phoneBackup: string;
     remoteStatus: RemoteStatus;
+    meetingId?: string;
+    passcode?: string;
+    dialIn?: string;
+    instructions?: string;
   },
 ): Promise<Appearance | null> {
   await ensureSchema();
   if (!(await getOwnedCaseRow(userId, caseId))) return null;
   const rows = await query<AppearanceRow>(
     `INSERT INTO appearances (case_id, hearing_at, platform, join_url,
-                              phone_backup, remote_status)
-     VALUES ($1, $2, $3, $4, $5, $6)
+                              phone_backup, remote_status, meeting_id, passcode, dial_in, instructions)
+     VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, ''), COALESCE($8, ''), COALESCE($9, ''), COALESCE($10, ''))
      ON CONFLICT (case_id) DO UPDATE SET
        hearing_at = EXCLUDED.hearing_at,
        platform = EXCLUDED.platform,
        join_url = EXCLUDED.join_url,
        phone_backup = EXCLUDED.phone_backup,
        remote_status = EXCLUDED.remote_status,
+       meeting_id = COALESCE($7, appearances.meeting_id),
+       passcode = COALESCE($8, appearances.passcode),
+       dial_in = COALESCE($9, appearances.dial_in),
+       instructions = COALESCE($10, appearances.instructions),
        updated_at = now()
-     RETURNING id, case_id, hearing_at, platform, join_url, phone_backup, remote_status`,
+     RETURNING ${APPEARANCE_COLS}`,
     [
       caseId, input.hearingAt, input.platform, input.joinUrl,
       input.phoneBackup, input.remoteStatus,
+      input.meetingId ?? null, input.passcode ?? null, input.dialIn ?? null,
+      input.instructions ?? null,
     ],
   );
-  const a = rows[0];
-  return {
-    id: a.id, caseId: a.case_id,
-    hearingAt: a.hearing_at ? new Date(a.hearing_at).toISOString() : null,
-    platform: a.platform, joinUrl: a.join_url, phoneBackup: a.phone_backup,
-    remoteStatus: a.remote_status as RemoteStatus,
-  };
+  return rowToAppearance(rows[0]);
+}
+
+/** The case's appearance row, if any (no ownership check — callers
+ *  must have verified the case belongs to the user). */
+export async function getAppearance(caseId: string): Promise<Appearance | null> {
+  await ensureSchema();
+  const rows = await query<AppearanceRow>(
+    `SELECT ${APPEARANCE_COLS} FROM appearances WHERE case_id = $1`,
+    [caseId],
+  );
+  return rows[0] ? rowToAppearance(rows[0]) : null;
 }
 
 /** All watches with their owning case — used ONLY by the cron check,
@@ -992,10 +1011,11 @@ export async function renameDocument(
 interface EventRow {
   id: string; case_id: string; kind: string; title: string; details: string;
   occurred_on: string | Date; occurred_time: string | null; location: string; people: string;
+  phone?: string; join_url?: string; source?: string; source_ref?: string | null; done?: boolean;
   created_at: string; updated_at: string;
 }
 const EVENT_COLS =
-  'id, case_id, kind, title, details, occurred_on, occurred_time, location, people, created_at, updated_at';
+  'id, case_id, kind, title, details, occurred_on, occurred_time, location, people, phone, join_url, source, source_ref, done, created_at, updated_at';
 
 function dateOnly(v: string | Date): string {
   if (v instanceof Date) {
@@ -1019,6 +1039,11 @@ function rowToEvent(r: EventRow): CaseEvent {
     occurredTime: r.occurred_time || null,
     location: r.location,
     people: r.people,
+    phone: r.phone || '',
+    joinUrl: r.join_url || '',
+    source: r.source || 'user',
+    sourceRef: r.source_ref ?? null,
+    done: !!r.done,
     createdAt: new Date(r.created_at).toISOString(),
     updatedAt: new Date(r.updated_at).toISOString(),
   };
@@ -1032,6 +1057,10 @@ export interface CaseEventInput {
   occurredTime: string | null;
   location: string;
   people: string;
+  phone?: string;
+  joinUrl?: string;
+  source?: string;
+  sourceRef?: string | null;
 }
 
 export async function addCaseEvent(
@@ -1042,11 +1071,13 @@ export async function addCaseEvent(
   await ensureSchema();
   if (!(await getOwnedCaseRow(userId, caseId))) return null;
   const rows = await query<EventRow>(
-    `INSERT INTO case_events (case_id, user_id, kind, title, details, occurred_on, occurred_time, location, people)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO case_events (case_id, user_id, kind, title, details, occurred_on, occurred_time,
+                              location, people, phone, join_url, source, source_ref)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING ${EVENT_COLS}`,
     [caseId, userId, input.kind, input.title, input.details, input.occurredOn,
-      input.occurredTime, input.location, input.people],
+      input.occurredTime, input.location, input.people, input.phone || '',
+      input.joinUrl || '', input.source || 'user', input.sourceRef ?? null],
   );
   await query(`UPDATE cases SET updated_at = now() WHERE id = $1`, [caseId]);
   return rows[0] ? rowToEvent(rows[0]) : null;
@@ -1061,11 +1092,13 @@ export async function updateCaseEvent(
   await ensureSchema();
   const rows = await query<EventRow>(
     `UPDATE case_events SET kind = $4, title = $5, details = $6, occurred_on = $7,
-            occurred_time = $8, location = $9, people = $10, updated_at = now()
+            occurred_time = $8, location = $9, people = $10,
+            phone = COALESCE($11, phone), join_url = COALESCE($12, join_url), updated_at = now()
      WHERE id = $1 AND case_id = $2 AND user_id = $3
      RETURNING ${EVENT_COLS}`,
     [eventId, caseId, userId, input.kind, input.title, input.details, input.occurredOn,
-      input.occurredTime, input.location, input.people],
+      input.occurredTime, input.location, input.people, input.phone ?? null,
+      input.joinUrl ?? null],
   );
   return rows[0] ? rowToEvent(rows[0]) : null;
 }
@@ -1081,4 +1114,124 @@ export async function deleteCaseEvent(
     [eventId, caseId, userId],
   );
   return rows.length > 0;
+}
+
+/** Tick a timeline event off (e.g. a call that has been made). */
+export async function setCaseEventDone(
+  userId: string,
+  eventId: string,
+  done: boolean,
+): Promise<CaseEvent | null> {
+  await ensureSchema();
+  const rows = await query<EventRow>(
+    `UPDATE case_events SET done = $3, updated_at = now()
+     WHERE id = $1 AND user_id = $2
+     RETURNING ${EVENT_COLS}`,
+    [eventId, userId, done],
+  );
+  return rows[0] ? rowToEvent(rows[0]) : null;
+}
+
+/** One event the user owns, with its case title. */
+export async function getOwnedEvent(
+  userId: string,
+  eventId: string,
+): Promise<(CaseEvent & { caseTitle: string }) | null> {
+  await ensureSchema();
+  const rows = await query<EventRow & { case_title: string }>(
+    `SELECT ${EVENT_COLS.split(', ').map((c) => 'e.' + c).join(', ')}, c.title AS case_title
+     FROM case_events e JOIN cases c ON c.id = e.case_id
+     WHERE e.id = $1 AND e.user_id = $2`,
+    [eventId, userId],
+  );
+  return rows[0] ? { ...rowToEvent(rows[0]), caseTitle: rows[0].case_title } : null;
+}
+
+function localParts(iso: string): { date: string; time: string | null } {
+  // Hearing times are stored as timestamps; show them in the user's
+  // court time zone is not knowable here, so use the server's local
+  // reading of the stored value (the app stores local wall time).
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const time = hh === '00' && mm === '00' ? null : `${hh}:${mm}`;
+  return { date: `${y}-${m}-${day}`, time };
+}
+
+/** Everything on the user's calendar: deadlines, each case's hearing
+ *  (with its join link), and timeline events. */
+export async function calendarFeed(userId: string): Promise<CalendarItem[]> {
+  await ensureSchema();
+  const [deadlines, apps, events] = await Promise.all([
+    allDeadlines(userId),
+    query<AppearanceRow & { case_title: string }>(
+      `SELECT ${APPEARANCE_COLS.split(', ').map((c) => 'a.' + c).join(', ')}, c.title AS case_title
+       FROM appearances a JOIN cases c ON c.id = a.case_id
+       WHERE c.user_id = $1`,
+      [userId],
+    ),
+    query<EventRow & { case_title: string }>(
+      `SELECT ${EVENT_COLS.split(', ').map((c) => 'e.' + c).join(', ')}, c.title AS case_title
+       FROM case_events e JOIN cases c ON c.id = e.case_id
+       WHERE e.user_id = $1`,
+      [userId],
+    ),
+  ]);
+  const items: CalendarItem[] = [];
+  const hearingKeys = new Set<string>();
+  const appByCase = new Map<string, Appearance>();
+  for (const a of apps) {
+    const ap = rowToAppearance(a);
+    appByCase.set(ap.caseId, ap);
+    if (!ap.hearingAt) continue;
+    const { date, time } = localParts(ap.hearingAt as string);
+    hearingKeys.add(`${ap.caseId}|${date}`);
+    items.push({
+      id: `hearing-${ap.id}`, source: 'hearing', kind: 'hearing',
+      caseId: ap.caseId, caseTitle: a.case_title, title: 'Hearing',
+      date, time, done: false, details: ap.instructions,
+      joinUrl: ap.joinUrl, platform: ap.platform, meetingId: ap.meetingId,
+      passcode: ap.passcode, dialIn: ap.dialIn || ap.phoneBackup, phone: '',
+      eventId: null, at: ap.hearingAt,
+    });
+  }
+  for (const d of deadlines) {
+    // The hearing itself is already on the calendar with its join link.
+    if (d.type === 'hearing_date' && hearingKeys.has(`${d.caseId}|${d.dueAt}`)) continue;
+    // A hearing without a time still carries the case's join details.
+    const ap = d.type === 'hearing_date' ? appByCase.get(d.caseId) : undefined;
+    if (ap) {
+      items.push({
+        id: `deadline-${d.id}`, source: 'deadline', kind: d.type,
+        caseId: d.caseId, caseTitle: d.caseTitle, title: d.label || 'Hearing',
+        date: d.dueAt, time: null, done: d.done, details: ap.instructions,
+        joinUrl: ap.joinUrl, platform: ap.platform, meetingId: ap.meetingId,
+        passcode: ap.passcode, dialIn: ap.dialIn || ap.phoneBackup, phone: '',
+        eventId: null, at: null,
+      });
+      continue;
+    }
+    items.push({
+      id: `deadline-${d.id}`, source: 'deadline', kind: d.type,
+      caseId: d.caseId, caseTitle: d.caseTitle, title: d.label || d.type,
+      date: d.dueAt, time: null, done: d.done, details: '',
+      joinUrl: '', platform: '', meetingId: '', passcode: '', dialIn: '', phone: '',
+      eventId: null, at: null,
+    });
+  }
+  for (const r of events) {
+    const e = rowToEvent(r);
+    items.push({
+      id: `event-${e.id}`, source: 'event', kind: e.kind,
+      caseId: e.caseId, caseTitle: r.case_title, title: e.title,
+      date: e.occurredOn, time: e.occurredTime ? e.occurredTime.slice(0, 5) : null,
+      done: e.done, details: e.details, joinUrl: e.joinUrl, platform: '',
+      meetingId: '', passcode: '', dialIn: '', phone: e.phone, eventId: e.id, at: null,
+    });
+  }
+  items.sort((x, y) => (x.date + (x.time || '')).localeCompare(y.date + (y.time || '')));
+  return items;
 }

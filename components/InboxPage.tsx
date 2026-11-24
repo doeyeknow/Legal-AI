@@ -52,8 +52,43 @@ const FACT_LABELS: Record<string, string> = {
   opposing_party: 'Other party',
   opposing_attorney: 'Opposing attorney',
   join_info: 'Join information',
+  join_link: 'Join link',
+  meeting_id: 'Meeting number',
+  passcode: 'Passcode',
+  dial_in: 'Join by phone',
+  remote_instructions: 'How to appear remotely',
+  callback_phone: 'Call requested',
   mentioned_date: 'Date mentioned',
 };
+
+/** Where an added fact went, said plainly. */
+function addedWhere(fact: ExtractedFact): string {
+  switch (fact.kind) {
+    case 'hearing_date':
+    case 'hearing_time':
+      return 'Hearing on the calendar';
+    case 'response_due':
+    case 'deadline':
+    case 'discovery_due':
+    case 'trial_date':
+      return 'Deadline on the calendar';
+    case 'join_link':
+      return 'Join button on the hearing';
+    case 'meeting_id':
+    case 'passcode':
+    case 'dial_in':
+    case 'remote_instructions':
+      return 'Saved with the hearing';
+    case 'callback_phone':
+      return 'Call added to the calendar';
+    case 'case_number':
+      return 'Case number on the case';
+    case 'court_name':
+      return 'Court on the case';
+    default:
+      return 'Saved to the case';
+  }
+}
 
 const CONFIDENCE_WORDS: Record<string, string> = {
   high: 'Found in the email',
@@ -76,6 +111,15 @@ function appliedSummary(fact: ExtractedFact): string {
       return 'Sets the case number on the case, if it doesn’t have one yet.';
     case 'court_name':
       return 'Sets the court on the case, if it isn’t set yet.';
+    case 'join_link':
+      return 'Adds a Join button to the case’s hearing on the calendar.';
+    case 'meeting_id':
+    case 'passcode':
+    case 'dial_in':
+    case 'remote_instructions':
+      return 'Saves this with the hearing so it shows next to the Join button.';
+    case 'callback_phone':
+      return 'Adds a call to make on the calendar, with a button to have the hearing companion listen in.';
     default:
       return 'Saves this to the case’s confirmed facts, so documents you generate for this case can use it.';
   }
@@ -581,10 +625,12 @@ export default function InboxPage() {
       {infoOpen && (
         <Modal title="About court mail" onClose={() => setInfoOpen(false)}>
           <p className="lede inboxinfo">
-            Mail sent to your court-mail address is read for the dates, deadlines, and case numbers
-            your cases need. <strong>Nothing is added to a case until you confirm it</strong>, and
-            nothing is ever filed, sent, or answered automatically.
+            Mail sent to your court-mail address is read for hearing dates, deadlines, case
+            numbers, remote-appearance links, and requests to call someone back. Those details are
+            added to the matching case and your calendar automatically, and anything added can be
+            removed from the message with one tap. Nothing is ever filed, sent, or answered for you.
           </p>
+          <AutoApplySettings onApplied={() => refresh()} />
           <InboxAddressCard />
         </Modal>
       )}
@@ -1202,10 +1248,12 @@ function MessageView({
 
       {proposed.length > 0 && (
         <section className="dashsection">
-          <h3>Found in this message — your call</h3>
+          <h3>Found in this message — please check</h3>
           <p className="fineprint">
-            These stay out of your case file and out of every document until you confirm them.
+            These were not added automatically because they may not be right. Add the ones that
+            are, or add them all at once.
           </p>
+          <ApplyAllButton messageId={detail.id} onDone={onChanged} />
           {proposed.map((f) => (
             <FactCard key={f.id} fact={f} messageId={detail.id} assigned={Boolean(detail.caseId)} onChanged={onChanged} />
           ))}
@@ -1213,17 +1261,12 @@ function MessageView({
       )}
       {decided.length > 0 && (
         <section className="dashsection">
-          <h3>Already decided</h3>
-          <ul className="commlist">
+          <h3>Added to {detail.caseId ? (
+            <Link href={`/dashboard/cases/${detail.caseId}`}>{cases.find((c) => c.id === detail.caseId)?.title || 'the case'}</Link>
+          ) : 'this message'}</h3>
+          <ul className="commlist addedfacts">
             {decided.map((f) => (
-              <li key={f.id} className="commitem">
-                <span className={`dirbadge ${f.status === 'confirmed' ? 'from_court' : ''}`}>
-                  {f.status === 'confirmed' ? 'Added' : 'Dismissed'}
-                </span>
-                <span>
-                  <strong>{FACT_LABELS[f.kind] || f.kind}:</strong> {f.valueText}
-                </span>
-              </li>
+              <AddedFactRow key={f.id} fact={f} messageId={detail.id} onChanged={onChanged} />
             ))}
           </ul>
         </section>
@@ -1526,5 +1569,145 @@ function AssignModal({
         <button className="btn ghost" disabled={busy} onClick={onClose}>Cancel</button>
       </div>
     </Modal>
+  );
+}
+
+function AddedFactRow({
+  fact,
+  messageId,
+  onChanged,
+}: {
+  fact: ExtractedFact;
+  messageId: string;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const added = fact.status === 'confirmed';
+  const auto = Boolean((fact.applied as Record<string, unknown>)?.auto);
+  async function remove() {
+    setBusy(true);
+    try {
+      await fetch(`/api/inbox/${messageId}/facts/${fact.id}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'undo' }),
+      });
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+  const isLink = fact.kind === 'join_link';
+  const isPhone = fact.kind === 'callback_phone' || fact.kind === 'dial_in';
+  return (
+    <li className="commitem addedfact">
+      <span className={`dirbadge ${added ? 'from_court' : ''}`}>
+        {added ? (auto ? 'Added automatically' : 'Added') : 'Removed'}
+      </span>
+      <span className="addedfact-text">
+        <strong>{FACT_LABELS[fact.kind] || fact.kind}:</strong>{' '}
+        {isLink ? (
+          <a href={fact.valueText} target="_blank" rel="noopener noreferrer">{fact.valueText}</a>
+        ) : isPhone ? (
+          <a href={`tel:${fact.valueText.replace(/[^\d+]/g, '')}`}>{fact.valueText}</a>
+        ) : fact.kind === 'remote_instructions' ? (
+          <span className="block prewrap">{fact.valueText}</span>
+        ) : (
+          fact.valueText
+        )}
+        {added && <span className="fineprint block">{addedWhere(fact)}</span>}
+      </span>
+      {added && (
+        <button type="button" className="btn small ghost" disabled={busy} onClick={remove}>
+          {busy ? 'Removing…' : 'Remove'}
+        </button>
+      )}
+    </li>
+  );
+}
+
+function ApplyAllButton({ messageId, onDone }: { messageId: string; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function run() {
+    setBusy(true);
+    try {
+      await fetch('/api/inbox/apply', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ids: [messageId] }),
+      });
+      onDone();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="choices">
+      <button type="button" className="btn primary" disabled={busy} onClick={run}>
+        <Icon name="check" size={15} /> {busy ? 'Adding…' : 'Add these details to the case'}
+      </button>
+    </div>
+  );
+}
+
+function AutoApplySettings({ onApplied }: { onApplied: () => void }) {
+  const [autoApply, setAutoApply] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+  useEffect(() => {
+    fetch('/api/inbox/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b) => setAutoApply(b ? Boolean(b.autoApply) : true))
+      .catch(() => setAutoApply(true));
+  }, []);
+  async function toggle(on: boolean) {
+    setAutoApply(on);
+    await fetch('/api/inbox/settings', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ autoApply: on }),
+    }).catch(() => undefined);
+  }
+  async function applyExisting() {
+    setBusy(true);
+    setNote('');
+    try {
+      const r = await fetch('/api/inbox/apply', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const b = await r.json().catch(() => null);
+      if (!r.ok || !b) {
+        setNote('That didn’t work — try again in a moment.');
+      } else {
+        setNote(
+          b.applied > 0
+            ? `Added ${b.applied} detail${b.applied === 1 ? '' : 's'} from ${b.messages} message${b.messages === 1 ? '' : 's'}${b.casesCreated ? `, and started ${b.casesCreated} new case${b.casesCreated === 1 ? '' : 's'}` : ''}.`
+            : 'Everything in your mail is already on your cases.',
+        );
+        onApplied();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="autoapply">
+      <label className="toggleline">
+        <input
+          type="checkbox"
+          checked={autoApply !== false}
+          disabled={autoApply === null}
+          onChange={(e) => toggle(e.target.checked)}
+        />
+        <span>
+          <strong>Add details from court mail to my cases automatically</strong>
+          <span className="fineprint block">
+            When off, each detail waits in the message until you add it.
+          </span>
+        </span>
+      </label>
+      <button type="button" className="btn ghost" disabled={busy} onClick={applyExisting}>
+        <Icon name="mail" size={15} /> {busy ? 'Reading your mail…' : 'Add details from mail you already received'}
+      </button>
+      {note && <p className="savednote" role="status">{note}</p>}
+    </div>
   );
 }
