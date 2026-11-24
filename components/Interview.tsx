@@ -169,6 +169,8 @@ export default function Interview() {
   const emptyCyclesRef = useRef(0);
   const listenPausedRef = useRef(false);
   const autoBlockedRef = useRef(false);
+  /** True after getUserMedia has succeeded once this page session. */
+  const micPrimedRef = useRef(false);
   const notesOnceRef = useRef<Set<string>>(new Set());
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recogSessionRef = useRef<{ auto: boolean; gotResult: boolean; suppressEnd: boolean } | null>(null);
@@ -933,7 +935,38 @@ export default function Interview() {
     const rec = recogRef.current;
     if (rec) {
       if (recogSessionRef.current) recogSessionRef.current.suppressEnd = suppressEnd;
+      try { rec.abort?.(); } catch { /* older engines */ }
       try { rec.stop(); } catch { /* already stopped */ }
+    }
+  }
+
+  /** Ask for microphone access while we still have a user gesture.
+   *  Web Speech often fails instantly (mic flash) if the first
+   *  recognition.start() happens later, after TTS, with no gesture. */
+  async function ensureMicAccess(): Promise<boolean> {
+    if (micPrimedRef.current) return true;
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      // Still try SpeechRecognition — some browsers expose it without mediaDevices.
+      return true;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Release tracks immediately; we only needed the permission grant.
+      for (const t of stream.getTracks()) t.stop();
+      micPrimedRef.current = true;
+      autoBlockedRef.current = false;
+      return true;
+    } catch (err: any) {
+      const name = String(err?.name || err || '');
+      autoBlockedRef.current = true;
+      if (name.includes('NotAllowed') || name.includes('PermissionDenied')) {
+        setVoiceNote('Microphone access was blocked — typing works just the same.');
+      } else if (name.includes('NotFound') || name.includes('DevicesNotFound')) {
+        setVoiceNote('No microphone was found on this device — typing works just the same.');
+      } else {
+        setVoiceNote('Could not open the microphone — typing works just the same.');
+      }
+      return false;
     }
   }
 
@@ -954,6 +987,16 @@ export default function Interview() {
       return false;
     }
     if (listeningRef.current) return true;
+
+    // Tear down any prior instance so a stale onend cannot clear the new session.
+    const prev = recogRef.current;
+    if (prev) {
+      try { prev.onend = null; prev.onerror = null; prev.onresult = null; } catch { /* */ }
+      try { prev.abort?.(); } catch { /* */ }
+      try { prev.stop(); } catch { /* */ }
+      recogRef.current = null;
+    }
+
     const rec = new SR();
     const session = { auto, gotResult: false, suppressEnd: false };
     recogSessionRef.current = session;
@@ -961,6 +1004,8 @@ export default function Interview() {
     rec.interimResults = true;
     rec.continuous = false;
     rec.onresult = (e: any) => {
+      // Ignore results from a superseded instance.
+      if (recogRef.current !== rec) return;
       let interim = '';
       let finalText = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -977,13 +1022,18 @@ export default function Interview() {
       }
     };
     rec.onend = () => {
+      // Stale session: a newer recognition is already running (or was started).
+      if (recogRef.current !== rec) return;
       setListening(false);
       listeningRef.current = false;
-      if (recogRef.current === rec) recogRef.current = null;
+      recogRef.current = null;
       handleRecogEnd(session);
     };
     rec.onerror = (e: any) => {
-      if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') {
+      if (recogRef.current !== rec && recogRef.current !== null) return;
+      const err = String(e?.error || 'unknown');
+      try { console.warn('[speech]', err, e); } catch { /* */ }
+      if (err === 'not-allowed' || err === 'service-not-allowed') {
         // Retrying can never fix a denied permission: the loop
         // stays off (TTS is unaffected) and the note shows once.
         autoBlockedRef.current = true;
@@ -991,14 +1041,23 @@ export default function Interview() {
         const text = 'Microphone access was blocked — typing works just the same.';
         if (session.auto) showNoteOnce('blocked', text);
         else setVoiceNote(text);
-      } else if (e?.error === 'network' || e?.error === 'audio-capture') {
-        // In the loop this simply counts as an empty turn (see
-        // handleRecogEnd); a manual tap keeps the v1 note.
-        if (!session.auto) {
-          setVoiceNote('Voice typing is not available right now — typing works just the same.');
-        }
-      } else if (e?.error === 'aborted') {
+      } else if (err === 'network') {
+        session.suppressEnd = !session.auto;
+        const text =
+          'Voice typing could not reach the speech service (network). Check your connection, disable VPN/ad-block for this site, or type your answer.';
+        if (session.auto) showNoteOnce('network', text);
+        else setVoiceNote(text);
+      } else if (err === 'audio-capture') {
+        session.suppressEnd = !session.auto;
+        const text = 'Could not capture audio from the microphone — typing works just the same.';
+        if (session.auto) showNoteOnce('audio-capture', text);
+        else setVoiceNote(text);
+      } else if (err === 'aborted') {
         session.suppressEnd = true;
+      } else if (err === 'no-speech') {
+        // Normal for a quiet room; the empty-turn loop handles retries.
+      } else if (!session.auto) {
+        setVoiceNote(`Voice typing hit a problem (${err}) — typing works just the same.`);
       }
     };
     recogRef.current = rec;
@@ -1013,6 +1072,10 @@ export default function Interview() {
     } catch {
       setListening(false);
       listeningRef.current = false;
+      recogRef.current = null;
+      if (!auto) {
+        setVoiceNote('Listening could not be started in this browser — typing works just the same.');
+      }
       return false;
     }
   }
@@ -1072,7 +1135,7 @@ export default function Interview() {
     }, 300);
   }
 
-  function toggleVoice() {
+  async function toggleVoice() {
     if (voiceOn) {
       voiceOnRef.current = false;
       playerRef.current?.stop();
@@ -1089,6 +1152,12 @@ export default function Interview() {
     setVoiceNote(null);
     listenPausedRef.current = false;
     emptyCyclesRef.current = 0;
+    // Prime mic permission on this user gesture so auto-listen after
+    // TTS is not the first time the browser sees a mic request.
+    const ok = await ensureMicAccess();
+    if (!ok) {
+      // Still allow TTS-only voice mode; listening stays manual/blocked.
+    }
     const p = getPlayer();
     // Everything already on screen counts as heard except the
     // current question, which is re-read to open the "call".
@@ -1102,7 +1171,7 @@ export default function Interview() {
     setVoiceOn(true);
   }
 
-  function toggleMic() {
+  async function toggleMic() {
     if (listening) {
       // Tapping mid-listen takes manual control of the call: the
       // loop pauses until the next tap.
@@ -1114,967 +1183,3 @@ export default function Interview() {
     }
     setVoiceNote(null);
     listenPausedRef.current = false;
-    emptyCyclesRef.current = 0;
-    // Barge-in: tapping Speak while the assistant is talking stops
-    // the speech first, so the mic never hears the assistant.
-    if (voiceOnRef.current && speakingRef.current) playerRef.current?.stop();
-    startRecognition(false);
-  }
-
-  // ---------- County assist ----------
-
-  /** "Use my location" (pin badge): geolocation is requested ONLY on this
-   *  tap, never uninvited. Coordinates go to /api/county for one
-   *  lookup and are not stored anywhere. */
-  function useMyLocation() {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      say('bot', "No problem — type the county, or your ZIP and I'll match it.");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        fetch(`/api/county?lat=${pos.coords.latitude}&lng=${pos.coords.longitude}`)
-          .then(async (res) => {
-            const d = res.ok ? await res.json().catch(() => null) : null;
-            if (d && d.county && d.state) {
-              setPendingCounty({ county: String(d.county), state: String(d.state) });
-              say('bot', `You're in ${d.county} County, ${d.state} — use that?`);
-            } else {
-              say('bot', "I couldn't pin down the county from here — type the county, or your ZIP and I'll match it.");
-            }
-          })
-          .catch(() => {
-            say('bot', "I couldn't pin down the county from here — type the county, or your ZIP and I'll match it.");
-          });
-      },
-      () => {
-        say('bot', "No problem — type the county, or your ZIP and I'll match it.");
-      },
-      { timeout: 10000, maximumAge: 600000 },
-    );
-  }
-
-  function useMyZip() {
-    if (!zipCounty) return;
-    const zip = (answers.zip || '').trim().slice(0, 5);
-    setPendingCounty({ county: zipCounty.county, state: zipCounty.state });
-    say('bot', `Your ZIP ${zip} points to ${zipCounty.county} County, ${zipCounty.state} — use that?`);
-  }
-
-  /** Yes on the county confirmation: seed BOTH the county and
-   *  state answers and advance exactly as if typed. */
-  function confirmCounty() {
-    const pc = pendingCounty;
-    if (!pc) return;
-    stopRecognition(true);
-    const field = queue[qIdx];
-    setPendingCounty(null);
-    if (!field || field.key !== 'county') return;
-    say('user', 'Yes');
-    const next = { ...answers, county: pc.county, state: pc.state };
-    setAnswers(next);
-    proceedWith(next);
-  }
-
-  function declineCounty() {
-    if (!pendingCounty) return;
-    stopRecognition(true);
-    setPendingCounty(null);
-    say('user', "No, I'll type it");
-    say('bot', 'No problem — type the county name.');
-  }
-
-  /** One submit path for typing, badges-adjacent input, and the
-   *  microphone's final transcript alike. */
-  function submitInput(override?: string) {
-    if (stage === 'situation') return submitSituation(override ?? input);
-    if (stage === 'fields' || stage === 'feew-fields') {
-      const v = (override ?? input).trim();
-      if (!v) return;
-      setInput('');
-      return answerField(v);
-    }
-  }
-
-  function startFeeWaiverFields() {
-    say('user', 'Yes, add the fee waiver');
-    setFeeWaiverAdded(true);
-    setQueue(IFP_FIELDS);
-    setQTotal(IFP_FIELDS.length);
-    setQIdx(0);
-    setStage('feew-fields');
-    say('bot', IFP_FIELDS[0].label);
-  }
-
-  function skipFeeWaiver() {
-    say('user', 'No, skip it');
-    enterReview();
-  }
-
-  async function startPayment() {
-    if (!motion) return;
-    setPayError(null);
-    try {
-      const res = await fetch('/api/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ motionId: motion.id, coupon: coupon.trim() || undefined }),
-      });
-      const data = await res.json();
-      if (data.devFree) return generatePdf(null);
-      if (data.couponFree) return generatePdf(null, coupon.trim());
-      if (data.url) {
-        sessionStorage.setItem(STORE_KEY, JSON.stringify({ motionId: motion.id, answers: withStateParty(motion, answers), signature, feeWaiverAdded, subject, draftId: draftIdRef.current, caseId: caseIdRef.current }));
-        window.location.href = data.url;
-        return;
-      }
-      setPayError(data.message || 'Payments are not available right now.');
-    } catch {
-      setPayError('Something went wrong starting checkout. No charge was made.');
-    }
-  }
-
-  async function generatePdf(sessionId: string | null, couponCode?: string) {
-    if (!motion) return;
-    setStage('generating');
-    try {
-      const res = await fetch('/api/pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ motionId: motion.id, answers: withStateParty(motion, answers), signature, feeWaiverAdded, sessionId, coupon: couponCode || undefined, forWhom: subject, draftId: draftIdRef.current || undefined, caseId: caseIdRef.current || undefined }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setPayError(data.message || 'The document could not be generated.');
-        setStage('pay');
-        return;
-      }
-      // The document exists: the draft (if any) has completed, so
-      // the autosave stands down for good.
-      draftDoneRef.current = true;
-      const savedId = res.headers.get('x-legal-case-id');
-      if (savedId) setSavedCaseId(savedId);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${motion.id}.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
-      say('bot', 'Your document is downloading. Print it, and file the whole packet — motion, any companions listed in it, and the certificate of service.');
-      const fres = await fetch('/api/courts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ motionId: motion.id, zip: answers.zip, state: answers.state, county: answers.county }),
-      });
-      if (fres.ok) setFiling(await fres.json());
-      setStage('done');
-    } catch {
-      setPayError('The document could not be generated. If you paid, contact us and we will make it right.');
-      setStage('pay');
-    }
-  }
-
-  // The voice loop's async callbacks (speech drain, recognition
-  // events, retry timers) always reach the CURRENT render's
-  // handlers through this ref — a closure captured by an earlier
-  // render would act on stale interview state.
-  const fnRef = useRef({
-    submitInput: (_t?: string) => {},
-    startRecognition: (_auto: boolean): boolean => false,
-    maybeAutoListen: () => {},
-  });
-  fnRef.current = { submitInput, startRecognition, maybeAutoListen };
-
-  const currentField = (stage === 'fields' || stage === 'feew-fields') ? queue[qIdx] : null;
-  // Courts-database key for the court-name step (state+county are
-  // collected before courtName in the shared field order).
-  const courtKey = answers.state && answers.county
-    ? `${answers.state}|${answers.county}`.toLowerCase()
-    : '';
-  const courtBadgesActive =
-    currentField?.key === 'courtName' &&
-    !courtTyped &&
-    !!courtOpts &&
-    courtOpts.key === courtKey &&
-    courtOpts.courts.length > 0;
-
-  // Quick-answer badges for the composer dock — ONLY where the
-  // answer set is genuinely known ahead of time. Open factual
-  // fields (names, dates, amounts, free text) get none.
-  const badges: QuickBadge[] = [];
-  if (pendingCounty) {
-    badges.push(
-      { label: 'Yes', primary: true, action: confirmCounty },
-      { label: "No, I'll type it", action: declineCounty },
-    );
-  } else if (stage === 'who') {
-    badges.push(
-      { label: 'For me', primary: true, action: chooseSelf },
-      { label: 'For someone else', action: chooseOther },
-    );
-  } else if (stage === 'confirm' && motion) {
-    badges.push({ label: 'Yes — that is the one', primary: true, action: () => chooseMotion(motion) });
-    for (const c of candidates) {
-      if (c.id !== motion.id) {
-        badges.push({ label: `Closer: ${c.name}`, action: () => chooseMotion(c) });
-      }
-    }
-    badges.push({
-      label: 'Show me the full library',
-      action: () => { say('user', 'Show me the full list'); setStage('pick'); },
-    });
-  } else if (stage === 'feew-choice') {
-    badges.push(
-      { label: 'Yes, add the fee waiver (free)', primary: true, action: startFeeWaiverFields },
-      { label: 'No, skip it', action: skipFeeWaiver },
-    );
-  } else if (currentField) {
-    if (currentField.type === 'select' && currentField.options) {
-      for (const o of currentField.options) {
-        // An option literally named "Other" IS the free-text
-        // path (rendered as "Other…" below), never a stored
-        // literal answer.
-        if (o === 'Other') continue;
-        badges.push({
-          label: o,
-          sel: (answers[currentField.key] || '') === o,
-          action: () => answerField(o),
-        });
-      }
-      // Every select gets an "Other…" path: it reveals the text
-      // composer, and the typed text becomes the answer verbatim.
-      badges.push({
-        label: 'Other…',
-        sel: otherMode,
-        action: () => {
-          setOtherMode(true);
-          setTimeout(() => {
-            document
-              .querySelector<HTMLInputElement | HTMLTextAreaElement>(
-                '.stepcomposer input, .stepcomposer textarea',
-              )
-              ?.focus();
-          }, 60);
-        },
-      });
-    } else if (currentField.key === 'county') {
-      badges.push({ label: 'Use my location', icon: 'pin', primary: true, action: useMyLocation });
-      if (zipCounty) {
-        const z = (answers.zip || '').trim().slice(0, 5);
-        badges.push({ label: `Use my ZIP: ${z}`, action: useMyZip });
-      }
-    } else if (currentField.key === 'courtName') {
-      if (courtBadgesActive && courtOpts) {
-        // Real courts for this county from the courts database —
-        // no invented options; an uncovered county never gets here.
-        for (const c of courtOpts.courts) {
-          badges.push({ label: c.name, action: () => answerField(c.name) });
-        }
-        badges.push({ label: 'Type it instead', action: () => setCourtTyped(true) });
-      }
-      badges.push({ label: 'Not sure', action: () => answerField('not sure') });
-    } else if (
-      currentField.key === 'caseNumber' ||
-      currentField.key === 'opposingAttorney' ||
-      currentField.key === 'ifpBenefits'
-    ) {
-      // These questions name "none" as an answer in their own text.
-      badges.push({ label: 'None', action: () => answerField('none') });
-    }
-  }
-
-  // ---- Chat-thread derivation ----------------------------------
-  // The engine above is untouched; what follows only decides how
-  // the CURRENT step is displayed. The full conversation renders
-  // as bubbles; the current turn's LAST bot message is the live
-  // question for Q&A stages, so it is rendered from state (with
-  // its hint behind a "?") instead of appearing twice.
-  const lastUserIdx = msgs.reduce((acc, m, i) => (m.from === 'user' ? i : acc), -1);
-  const turnBots = msgs
-    .slice(lastUserIdx + 1)
-    .filter((m) => m.from === 'bot')
-    .map((m) => m.text);
-  const countyPrompt = pendingCounty
-    ? turnBots[turnBots.length - 1] || ''
-    : '';
-
-  // Review: every answered question, in the order the document
-  // uses them — shared caption fields, the motion's own fields,
-  // then the fee-waiver questions when one was added.
-  const reviewPairs = (() => {
-    const seen = new Set<string>();
-    const out: { key: string; label: string; value: string }[] = [];
-    const all = [
-      ...SHARED_FIELDS,
-      ...(motion?.fields || []),
-      ...(feeWaiverAdded ? IFP_FIELDS : []),
-    ];
-    for (const f of all) {
-      if (seen.has(f.key)) continue;
-      seen.add(f.key);
-      const v = (answers[f.key] || '').trim();
-      if (v) out.push({ key: f.key, label: f.label, value: v });
-    }
-    return out;
-  })();
-  const doneSteps = filing ? filing.steps : [];
-
-  let progressLabel: string | null = null;
-  if (stage === 'casefacts') {
-    progressLabel = 'Facts from your court mail';
-  } else if (stage === 'fields' || stage === 'feew-fields') {
-    progressLabel = `Question ${qIdx + 1} of ${qTotal}`;
-  } else if (stage === 'review') {
-    progressLabel = 'Review your answers';
-  } else if (stage === 'signature') {
-    progressLabel = 'Sign';
-  } else if (stage === 'pay') {
-    progressLabel = 'Your document';
-  } else if (stage === 'done') {
-    progressLabel = 'Filing steps';
-  }
-
-  const screenKey = [
-    stage,
-    stage === 'fields' || stage === 'feew-fields' ? qIdx : '',
-    pendingCounty ? 'county' : '',
-  ].join('-');
-
-  const goBackVisible =
-    !pendingCounty &&
-    ((stage === 'fields' && qIdx > 0) || stage === 'feew-fields');
-
-  // Selectable options render as ONE single-line horizontal rail
-  // of badges: no wrapping, chips never shrink, the rail scrolls
-  // sideways, and a selected chip is marked (.sel) and scrolled
-  // into view inside the rail only (see the effect below).
-  const badgeButtons = () => badges.length === 0 ? null : (
-    <div className="badgerail" ref={railRef} aria-label="Quick answers">
-      {badges.map((b, i) => (
-        <button
-          key={i}
-          type="button"
-          className={`badge${b.primary ? ' primary' : ''}${b.sel ? ' sel' : ''}`}
-          onClick={b.action}
-        >
-          {b.icon && <Icon name={b.icon} size={16} />}{b.label}
-        </button>
-      ))}
-    </div>
-  );
-  const badgeSig = badges.map((b) => b.label + (b.sel ? '*' : '')).join('|');
-  useEffect(() => {
-    const rail = railRef.current;
-    if (!rail) return;
-    const sel = rail.querySelector<HTMLElement>('.badge.sel');
-    if (!sel) return;
-    const r = rail.getBoundingClientRect();
-    const s = sel.getBoundingClientRect();
-    if (s.left < r.left || s.right > r.right) {
-      rail.scrollLeft += s.left - r.left - 12;
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [badgeSig, screenKey]);
-
-  // Per-step resets + the courts-database fetch for the court-name
-  // step. The fetch is local data only and fail-soft: any error or
-  // empty result leaves today's typed question untouched.
-  useEffect(() => {
-    setOtherMode(false);
-    setCourtTyped(false);
-  }, [screenKey]);
-  useEffect(() => {
-    if (!courtKey || courtTyped) return;
-    if (courtOpts && courtOpts.key === courtKey) return;
-    let live = true;
-    fetch(`/api/courts?state=${encodeURIComponent(answers.state)}&county=${encodeURIComponent(answers.county)}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (live) {
-          setCourtOpts({
-            key: courtKey,
-            courts: Array.isArray(j.courts) ? j.courts : [],
-          });
-        }
-      })
-      .catch(() => {
-        if (live) setCourtOpts({ key: courtKey, courts: [] });
-      });
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courtKey, courtTyped]);
-  // Done screen: if the chosen court matches a database record for
-  // the case's county, its contact card is shown with the steps.
-  useEffect(() => {
-    if (stage !== 'done') return;
-    let live = true;
-    fetch(`/api/courts?detail=1&state=${encodeURIComponent(answers.state || '')}&county=${encodeURIComponent(answers.county || '')}`)
-      .then((r) => r.json())
-      .then((j) => {
-        if (!live) return;
-        const want = (answers.courtName || '').trim().toLowerCase();
-        const rec = (Array.isArray(j.courts) ? j.courts : []).find(
-          (c: CourtRecord) => c.name.toLowerCase() === want,
-        );
-        setCourtCard(rec || null);
-      })
-      .catch(() => { if (live) setCourtCard(null); });
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stage]);
-
-  // Pick drill-down: categories first (in the fixed taxonomy
-  // order), then one category's motions. The thread scrolls, so
-  // every option is shown — no pagination.
-  const pickCats = CATEGORIES.filter((c) => (grouped[c] || []).length > 0);
-  const pickList = pickCat ? grouped[pickCat] || [] : [];
-
-  // ---------- Chat-thread presentation ----------
-  // The whole conversation renders as bubbles in a scrolling
-  // thread; the current step is the live area at its foot — a
-  // question bubble for Q&A stages, an interactive card for the
-  // form-like ones. Quick-answer chips and the composer sit in a
-  // dock pinned to the bottom of the screen. The page itself
-  // never scrolls and never zooms.
-  const isQStage = stage === 'situation' || stage === 'fields' || stage === 'feew-fields';
-
-  // History: everything except the live question (the current
-  // turn's last bot message) on Q&A stages.
-  const historyMsgs =
-    stage === 'fields' || stage === 'feew-fields'
-      ? [
-          ...msgs.slice(0, lastUserIdx + 1),
-          ...msgs.slice(lastUserIdx + 1).filter((m) => m.from === 'bot').slice(0, -1),
-        ]
-      : msgs;
-
-  // The long "honest note" and warning copy a matched motion
-  // produces belongs in the confirm card's "?" popup, not as
-  // walls of text in the thread.
-  const isHiddenTip = (m: Msg) =>
-    m.from === 'bot' &&
-    (m.text.startsWith('Honest note:') || (motion ? m.text === motion.warning : false));
-
-  const liveQuestion =
-    stage === 'fields' || stage === 'feew-fields'
-      ? pendingCounty
-        ? countyPrompt
-        : currentField
-          ? currentField.label
-          : null
-      : null;
-  const liveHint = currentField && !pendingCounty ? currentField.hint : null;
-
-  // Keep the thread glued to the newest content as it arrives.
-  useEffect(() => {
-    const log = logRef.current;
-    if (log) log.scrollTop = log.scrollHeight;
-  }, [msgs.length, screenKey, liveQuestion]);
-
-  const composer = (
-    <div className="stepcomposer composer">
-      {datePickOpen && currentField?.type === 'date' && (
-        <DatePicker
-          title={currentField.label}
-          onClose={() => setDatePickOpen(false)}
-          onPick={(d) => {
-            setDatePickOpen(false);
-            submitInput(d);
-          }}
-        />
-      )}
-      {currentField?.type === 'phone' && (
-        <DialPad value={input} onChange={setInput} />
-      )}
-      <div className="composerrow">
-        {currentField?.type === 'date' && (
-          <button
-            type="button"
-            className="composericon"
-            aria-label="Pick a date from the calendar"
-            title="Pick a date"
-            onClick={() => setDatePickOpen(true)}
-          >
-            <Icon name="calendar" size={19} />
-          </button>
-        )}
-        {currentField?.type === 'textarea' ? (
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            rows={2}
-            placeholder="Type your answer…"
-            aria-label="Your answer"
-            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitInput(); }}
-          />
-        ) : (
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={stage === 'situation' ? 'Describe your situation…' : 'Type your answer…'}
-            aria-label={stage === 'situation' ? 'Describe your situation' : 'Your answer'}
-            inputMode={currentField?.type === 'phone' ? 'tel' : undefined}
-            autoComplete={currentField?.type === 'phone' ? 'tel' : undefined}
-            onKeyDown={(e) => { if (e.key === 'Enter') submitInput(); }}
-          />
-        )}
-        <button
-          type="button"
-          className={`composericon micbtn${listening ? ' listening' : ''}`}
-          onClick={toggleMic}
-          aria-pressed={listening}
-          aria-label={listening ? 'Stop listening' : 'Answer by voice'}
-        >
-          {listening ? <Icon name="stop" size={18} /> : <Icon name="mic" size={18} />}
-        </button>
-        <button
-          type="button"
-          className="sendbtn"
-          onClick={() => submitInput()}
-          aria-label="Send"
-        >
-          <Icon name="arrowUpCircle" size={22} />
-        </button>
-      </div>
-    </div>
-  );
-
-  const botFace = (
-    <span className="botface" aria-hidden="true"><Icon name="scales" size={12} /></span>
-  );
-
-  const dockHasComposer = stage === 'situation' || stage === 'fields' || stage === 'feew-fields';
-  const dockEmpty =
-    !dockHasComposer && badges.length === 0 && !goBackVisible;
-
-  return (
-    <div className="interviewpage chatpage">
-      <header className="stephead voicebar">
-        <Link className="homelink" href="/" aria-label="Home">‹</Link>
-        <span className="stepmotion">{motion ? motion.name : 'New document'}</span>
-        {progressLabel && <span className="progress stepprogress">{progressLabel}</span>}
-        <button
-          type="button"
-          className={`btn voicebtn${voiceOn ? '' : ' primary'}`}
-          onClick={toggleVoice}
-          aria-pressed={voiceOn}
-        >
-          <Icon name="phone" size={15} /> {voiceOn ? 'End voice call' : 'Voice call'}
-        </button>
-      </header>
-
-      {(voiceOn || voiceNote) && (
-        <div className="voicestrip">
-          {voiceOn && (
-            <span className="vstatus">
-              {listening
-                ? 'Listening… speak your answer.'
-                : 'Voice on — questions are read aloud, then I listen.'}
-            </span>
-          )}
-          {voiceOn && speaking && (
-            <button type="button" className="btn ghost small" onClick={() => playerRef.current?.stop()}>
-              Stop speaking
-            </button>
-          )}
-          {voiceNote && <p className="voicenote" role="status">{voiceNote}</p>}
-        </div>
-      )}
-
-      <div className="chatlog" ref={logRef}>
-        {historyMsgs.map((m, i) =>
-          isHiddenTip(m) ? null : (
-            <div key={i} className={`msgrow ${m.from}`}>
-              {m.from === 'bot' && botFace}
-              <div className={`msg ${m.from}`}>{m.text}</div>
-            </div>
-          )
-        )}
-
-        {(stage === 'boot' || stage === 'generating') && (
-          <div className="msgrow bot">
-            {botFace}
-            <div className="msg bot typing" aria-label="Working…">
-              <span /><span /><span />
-            </div>
-          </div>
-        )}
-
-        {liveQuestion && (
-          <div className="msgrow bot">
-            {botFace}
-            <div className="msg bot qbubble">
-              {liveQuestion}
-              {liveHint && (
-                <HelpTip title="Tip">
-                  <p className="hintbody">{liveHint}</p>
-                </HelpTip>
-              )}
-              {courtBadgesActive && !courtTyped && (
-                <p className="qhint">Courts for {answers.county} County, from the court database — pick yours below, or type it instead.</p>
-              )}
-              {otherMode && currentField?.type === 'select' && (
-                <p className="qhint">Type your own answer below — it will be used exactly as written.</p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {stage === 'gate' && (
-          <div className="chatcard">
-            <h4>
-              Start with a free account
-              <HelpTip title="Why sign in?">
-                <p className="hintbody">
-                  Create an account or sign in, and your basic information — name, address,
-                  phone — fills out the forms for you, this time and every time after.
-                </p>
-              </HelpTip>
-            </h4>
-            <div className="choices">
-              <Link className="btn primary" href="/account">Sign in / Create account</Link>
-              <button
-                className="btn ghost"
-                onClick={() => {
-                  say('user', 'Continue as guest');
-                  if (preselectRef.current) {
-                    say('bot', 'No problem — I will ask for the information as we go.');
-                    beginFresh();
-                  } else {
-                    say('bot', 'No problem — I will ask for the information as we go. Tell me what is going on, in your own words.');
-                    setStage('situation');
-                  }
-                }}
-              >
-                Continue as guest
-              </button>
-            </div>
-            <p className="fineprint cardfoot">
-              <HelpTip title="The fine print">{DISCLAIMER}</HelpTip>
-            </p>
-          </div>
-        )}
-
-        {stage === 'casefacts' && (
-          <div className="chatcard">
-            <h4>
-              Facts from your court mail
-              <HelpTip title="What is this?">
-                <p className="hintbody">
-                  You confirmed these from email the court sent. Pick the ones that belong in
-                  this document — anything you switch off is asked about as usual, and
-                  nothing here is used unless you leave it on.
-                </p>
-              </HelpTip>
-            </h4>
-            <ul className="casefacts-list">
-              {caseFactRows.map((row) => (
-                <li className="factcard" key={row.bagKey}>
-                  <div className="factcard-head">
-                    <strong>{row.value}</strong>
-                    <button
-                      type="button"
-                      className={`btn small ${caseFactUse[row.bagKey] === false ? 'ghost' : 'primary'}`}
-                      onClick={() =>
-                        setCaseFactUse((u) => ({ ...u, [row.bagKey]: u[row.bagKey] === false }))
-                      }
-                    >
-                      {caseFactUse[row.bagKey] === false ? "Don't use" : 'Use this'}
-                    </button>
-                  </div>
-                  <p className="fineprint">{row.source}</p>
-                </li>
-              ))}
-            </ul>
-            <button type="button" className="btn primary" onClick={continueFromCaseFacts}>
-              Continue
-            </button>
-          </div>
-        )}
-
-        {stage === 'subject' && (
-          <div className="chatcard">
-            <h4>
-              {subject === 'self' ? 'Your information, from your profile' : 'The person this motion is for'}
-              <HelpTip title="Where does this go?">
-                <p className="hintbody">
-                  {subject === 'self'
-                    ? 'These details fill the caption, signature block, and filing steps of every document you prepare. Corrections here apply to this filing; the checkbox below also saves them to your profile for next time.'
-                    : 'Their information goes on the document — the caption, the signature block, and the filing steps at the end. It is used for this filing only: your account profile is not changed, and you remain the preparer.'}
-                </p>
-              </HelpTip>
-            </h4>
-            <div className="formgrid">
-              {PROFILE_FIELDS.map((f) => (
-                <div className={`field${f.full ? ' full' : ''}`} key={f.key}>
-                  <label htmlFor={`subj-${f.key}`}>{f.label}</label>
-                  <input
-                    id={`subj-${f.key}`}
-                    value={subjectInfo[f.key]}
-                    autoComplete={f.autoComplete}
-                    onChange={(e) => setSubjectInfo((s) => ({ ...s, [f.key]: e.target.value }))}
-                  />
-                </div>
-              ))}
-              <div className="field full">
-                <label htmlFor="subj-email">Email address</label>
-                <input
-                  id="subj-email"
-                  type="email"
-                  value={subjectInfo.email}
-                  autoComplete="email"
-                  onChange={(e) => setSubjectInfo((s) => ({ ...s, email: e.target.value }))}
-                />
-              </div>
-            </div>
-            {subject === 'self' ? (
-              <label className="checkrow">
-                <input
-                  type="checkbox"
-                  checked={saveBack}
-                  onChange={(e) => setSaveBack(e.target.checked)}
-                />
-                Save any changes to my profile
-              </label>
-            ) : null}
-            <button className="btn primary" disabled={!subjectInfo.fullName.trim()} onClick={applySubject}>
-              Use this information
-            </button>
-          </div>
-        )}
-
-        {stage === 'confirm' && motion && (
-          <div className="chatcard confirmcard">
-            <p className="stepkicker">This sounds like</p>
-            <h4>{motion.name}</h4>
-            <p className="cardsub">{motion.purpose}</p>
-            <HelpTip title="Is this the right one?">
-              <p className="hintbody">Honest note: {motion.proSe}</p>
-              {motion.warning && <p className="warn">{motion.warning}</p>}
-            </HelpTip>
-          </div>
-        )}
-
-        {stage === 'pick' && !pickCat && (
-          <div className="chatcard">
-            <h4>Pick the closest fit</h4>
-            <div className="catgrid">
-              {pickCats.map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  className="catitem"
-                  onClick={() => setPickCat(cat)}
-                >
-                  <Icon name={CATEGORY_ICONS[cat] || 'doc'} size={20} />
-                  <strong>{cat}</strong>
-                  <span>{(grouped[cat] || []).length} documents</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {stage === 'pick' && pickCat && (
-          <div className="chatcard">
-            <div className="pickhead">
-              <button type="button" className="backbtn" onClick={() => setPickCat(null)}>
-                ‹ Kinds of case
-              </button>
-              <h4>{pickCat}</h4>
-            </div>
-            <div className="pickgrid">
-              {pickList.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  className="pickitem"
-                  onClick={() => chooseMotion(m)}
-                >
-                  <strong>{m.name}</strong>
-                  <span>{m.purpose}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {stage === 'review' && (
-          <div className="chatcard">
-            <h4>
-              Check your answers
-              <HelpTip title="What happens now?">
-                <p className="hintbody">
-                  This is exactly what goes into your {motion ? motion.name : 'document'}.
-                  Read it over — if something is wrong, tap Back above the answer bar to fix
-                  it before you sign.
-                </p>
-              </HelpTip>
-            </h4>
-            <div className="reviewlist">
-              {reviewPairs.map((p) => (
-                <div className="reviewrow" key={p.key}>
-                  <span className="reviewq">{p.label}</span>
-                  <span className="reviewa">{p.value}</span>
-                  {caseFactSourcesRef.current[p.key] && (
-                    <span className="fineprint block">{caseFactSourcesRef.current[p.key]}</span>
-                  )}
-                </div>
-              ))}
-              {reviewPairs.length === 0 && (
-                <p className="steptext">Nothing to review yet.</p>
-              )}
-            </div>
-            <button type="button" className="btn primary" onClick={continueFromReview}>
-              Continue to signature
-            </button>
-          </div>
-        )}
-
-        {stage === 'signature' && (
-          <div className="chatcard">
-            <h4>{signPrompt()}</h4>
-            <div className="sigblock">
-              <SignaturePad onChange={setSignature} />
-              {!signature && <p className="fineprint">Draw your signature to continue.</p>}
-            </div>
-            <button
-              className="btn primary"
-              disabled={!signature}
-              onClick={() => { say('user', '(signed)'); setStage('pay'); }}
-            >
-              Continue to my document
-            </button>
-          </div>
-        )}
-
-        {stage === 'pay' && motion && (
-          <div className="chatcard">
-            <h4>
-              {motion.name}
-              <HelpTip title="What am I asking the court for?">
-                <p className="hintbody">{fill(motion.prayer, answers)}</p>
-              </HelpTip>
-            </h4>
-            <p className="cardsub">
-              {restoredSession
-                ? 'Your payment went through — generate your document below.'
-                : coupon.trim()
-                  ? 'Your document will be generated with the coupon applied.'
-                  : 'Your filing-ready PDF — $3, charged only when it is generated.'}
-            </p>
-            {payError && <p className="error">{payError}</p>}
-            {!restoredSession && (
-              <div className="field">
-                <label htmlFor="coupon-code">Coupon code (optional)</label>
-                <input
-                  id="coupon-code"
-                  value={coupon}
-                  autoComplete="off"
-                  placeholder="Have a code? Enter it here"
-                  onChange={(e) => setCoupon(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') startPayment(); }}
-                />
-              </div>
-            )}
-            {restoredSession ? (
-              <button className="btn primary big" onClick={() => generatePdf(restoredSession)}>Download my document</button>
-            ) : (
-              <button className="btn primary big" onClick={startPayment}>
-                {coupon.trim() ? 'Generate my document' : 'Generate my document — $3'}
-              </button>
-            )}
-            <p className="fineprint cardfoot">
-              <HelpTip title="What's included?">
-                <p className="hintbody">
-                  Your packet includes the motion{motion.needsProposedOrder ? ', a proposed order' : ''}{motion.needsConferenceCert ? ', a certificate of conference' : ''} and a certificate of service.
-                  {feeWaiverAdded ? ' The fee-waiver request is included at no extra charge.' : ''}
-                </p>
-              </HelpTip>
-              <HelpTip title="The fine print">{DISCLAIMER}</HelpTip>
-            </p>
-          </div>
-        )}
-
-        {stage === 'done' && filing && (
-          <div className="chatcard">
-            {savedCaseId && (
-              <p className="savednote">
-                Saved to your dashboard —{' '}
-                <Link href={`/dashboard/cases/${savedCaseId}`}>view the case</Link>, where its
-                deadlines, documents, and hearing details now live.
-              </p>
-            )}
-            <h4>{filing.heading}</h4>
-            {filing.approximate && (
-              <p className="warn">
-                We matched your ZIP to {filing.countyName || 'your'} County approximately —
-                double-check the county on your case paperwork before you file.
-              </p>
-            )}
-            <ol>
-              {doneSteps.map((s, i) => (
-                <li key={i}>
-                  <p>{s.text}</p>
-                  {s.links && (
-                    <p className="steplinks">
-                      {s.links.map((l) => (
-                        <a key={l.url} href={l.url} target="_blank" rel="noreferrer">{l.label} ↗</a>
-                      ))}
-                    </p>
-                  )}
-                </li>
-              ))}
-            </ol>
-            {courtCard && (
-              <div className="courtcard">
-                <h4>{courtCard.name}</h4>
-                <p className="fineprint">Your court — contact details from the court database.</p>
-                {courtCard.address
-                  ? <p><strong>Address:</strong> {courtCard.address}{courtCard.city ? `, ${courtCard.city}` : ''}</p>
-                  : courtCard.city
-                    ? <p><strong>City:</strong> {courtCard.city}</p>
-                    : null}
-                {courtCard.phone && <p><strong>Phone:</strong> {courtCard.phone}</p>}
-                {courtCard.fax && <p><strong>Fax:</strong> {courtCard.fax}</p>}
-                {courtCard.hours && <p><strong>Hours:</strong> {courtCard.hours}</p>}
-                {courtCard.email && <p><strong>Email:</strong> {courtCard.email}</p>}
-                {(courtCard.efilingUrl || courtCard.website) && (
-                  <p className="steplinks">
-                    {courtCard.efilingUrl && (
-                      <a href={courtCard.efilingUrl} target="_blank" rel="noreferrer">File online (e-filing) ↗</a>
-                    )}
-                    {courtCard.website && (
-                      <a href={courtCard.website} target="_blank" rel="noreferrer">Court website ↗</a>
-                    )}
-                  </p>
-                )}
-              </div>
-            )}
-            <p className="fineprint cardfoot">
-              <HelpTip title="The fine print">
-                <p className="hintbody">{DISCLAIMER}</p>
-                <p className="hintbody">
-                  Court rules change — confirm fees, deadlines, and service rules with the
-                  clerk of your court.
-                </p>
-              </HelpTip>
-            </p>
-            <Link className="btn" href="/library">Browse the motion library</Link>
-          </div>
-        )}
-      </div>
-
-      {!dockEmpty && (
-        <div className="chatdock">
-          {goBackVisible && (
-            <button type="button" className="backbtn" onClick={goBack}>‹ Back</button>
-          )}
-          {badgeButtons()}
-          {dockHasComposer && composer}
-        </div>
-      )}
-    </div>
-  );
-}
