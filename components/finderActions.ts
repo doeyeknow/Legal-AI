@@ -36,7 +36,9 @@ export function downloadPdf(url: string) {
 /** Print: load the PDF and hand it straight to the print dialog. */
 export async function printPdf(url: string) {
   try {
-    const res = await fetch(url);
+    const packet = new URL(url, window.location.origin);
+    packet.searchParams.set('filing', '0');
+    const res = await fetch(packet);
     if (!res.ok) throw new Error('fetch failed');
     const blob = await res.blob();
     const objUrl = URL.createObjectURL(blob);

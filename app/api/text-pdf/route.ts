@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateTextPdf } from '@/lib/text-pdf';
+import { requireUser } from '@/lib/api-guard';
 
 export const runtime = 'nodejs';
 
@@ -7,6 +8,8 @@ export const runtime = 'nodejs';
 // or edited from a template) as a simple PDF. Stateless: the text is
 // the user's own draft, sent in the request and never stored.
 export async function POST(req: NextRequest) {
+  const member = await requireUser(req);
+  if ('error' in member) return member.error;
   const body = await req.json().catch(() => ({}));
   const text = typeof body.text === 'string' ? body.text.slice(0, 20000) : '';
   if (!text.trim()) {

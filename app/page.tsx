@@ -4,12 +4,13 @@ import { Icon, type IconName } from '@/components/icons';
 import HelpTip from '@/components/HelpTip';
 import JsonLd from '@/components/JsonLd';
 import HomeWalkthrough from '@/components/HomeWalkthrough';
+import MembershipPlans from '@/components/MembershipPlans';
 import { ALL_MOTIONS } from '@/lib/motions/data';
 import type { Metadata } from 'next';
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from '@/lib/site';
 
 export const metadata: Metadata = {
-  title: { absolute: `${SITE_NAME}.org — Court motions for $3, prepared from your answers` },
+  title: { absolute: `${SITE_NAME}.org — Court motion PDFs for $5, with filing instructions` },
   description: SITE_DESCRIPTION,
   alternates: { canonical: '/' },
 };
@@ -42,9 +43,9 @@ const HOME_LD = {
       description: SITE_DESCRIPTION,
       offers: {
         '@type': 'Offer',
-        price: '3.00',
+        price: '5.00',
         priceCurrency: 'USD',
-        description: 'One filing-ready court document PDF. The interview is free.',
+        description: 'One motion PDF with filing instructions. The interview is free.',
       },
       publisher: { '@id': `${SITE_URL}/#org` },
     },
@@ -57,8 +58,8 @@ const HOME_LD = {
 // and the honest fine print.
 const QUICK: { href: string; icon: IconName; label: string; sub: string }[] = [
   { href: '/library', icon: 'book', label: 'Motion library', sub: 'Browse all motions' },
-  { href: '/dashboard', icon: 'folder', label: 'My cases', sub: 'Filings & deadlines' },
-  { href: '/dashboard/practice', icon: 'target', label: 'Hearing practice', sub: 'Rehearse with a judge' },
+  { href: '/dashboard', icon: 'folder', label: 'My cases', sub: 'Member dashboard' },
+  { href: '/dashboard/practice', icon: 'target', label: 'Hearing practice', sub: 'Member tool' },
   { href: '/account', icon: 'person', label: 'Account', sub: 'Saved information' },
 ];
 
@@ -106,25 +107,24 @@ export default function Home() {
     <div className="homepage">
       <JsonLd data={HOME_LD} />
       <section className="hero-card homehero">
-        <p className="eyebrow">Why pay lawyer prices?</p>
-        <h1>Lawyers charge hundreds an hour. Your court motion costs $3.</h1>
+        <p className="eyebrow">Court document preparation</p>
+        <h1>Prepare your court motion. Download it for $5.</h1>
         <p className="lede">
           Answer plain-English questions, one at a time, and get a filing-ready court document.
-          Then keep your whole case organized, from deadlines to court mail.
+          Filing instructions are included. Membership adds the case dashboard, all tools, and unlimited motion downloads.
         </p>
         <div className="herobtns">
           <Link className="btn primary big" href="/interview">Get Started</Link>
-          <a className="btn ghost big" href="#how">See how it works</a>
+          <a className="btn ghost big" href="#pricing">See pricing and plans</a>
         </div>
         <p className="price">
-          Free interview · <strong>$3</strong> document · free with subscription
+          Free interview · <s className="price-reference">$10</s> <strong>$5</strong> per PDF · included with membership
         </p>
         <p className="homerow">
           <HelpTip title="How this works">
             Describe your situation in plain words. We match it to the right motion, ask its
             questions one at a time, and prepare your filing-ready PDF — no retainer, no
-            hourly bill. The interview is free; the $3 is charged only when your PDF is
-            generated.
+            hourly bill. The interview is free. When you’re ready, pay $5 for the PDF and filing instructions or download them with your membership.
           </HelpTip>
           <HelpTip title="The fine print">{DISCLAIMER}</HelpTip>
         </p>
@@ -144,8 +144,8 @@ export default function Home() {
 
       <ul className="statstrip" aria-label="At a glance">
         <li><strong>{ALL_MOTIONS.length}</strong><span>court motion templates</span></li>
-        <li><strong>$3</strong><span>per finished document</span></li>
-        <li><strong>Free</strong><span>interview and fee waiver form</span></li>
+        <li><strong>$5</strong><span>per finished document</span></li>
+        <li><strong>Free</strong><span>motion interview</span></li>
         <li><strong>Any device</strong><span>phone, tablet, or computer</span></li>
       </ul>
 
@@ -180,26 +180,20 @@ export default function Home() {
         </section>
       ))}
 
-      <section className="homesec" aria-labelledby="price-h">
+      <section className="homesec" id="pricing" aria-labelledby="price-h">
         <p className="eyebrow">Pricing</p>
-        <h2 id="price-h">Simple, and only when you need it</h2>
-        <div className="pricegrid">
-          <div className="pricecard">
-            <span className="pricename">Interview</span>
-            <span className="priceamt">Free</span>
-            <span className="featbody">Answer every question, review, and polish before you pay anything.</span>
+        <h2 id="price-h">Buy one motion or get all the tools</h2>
+        <article className="pricecard single-motion">
+          <div>
+            <h3 className="pricename">One motion, no subscription</h3>
+            <p className="featbody">Start the interview for free. Pay once for the PDF and filing instructions.</p>
           </div>
-          <div className="pricecard main">
-            <span className="pricename">Each document</span>
-            <span className="priceamt">$3</span>
-            <span className="featbody">A filing-ready PDF, saved to your case. The fee waiver form is included free.</span>
-          </div>
-          <div className="pricecard">
-            <span className="pricename">Subscription</span>
-            <span className="priceamt">Included</span>
-            <span className="featbody">Documents are free with a subscription, for people with more than one filing.</span>
-          </div>
-        </div>
+          <p className="priceamt"><s className="price-reference">$10</s> $5</p>
+          <Link className="btn primary" href="/interview">Start my motion</Link>
+        </article>
+        <h3 className="membership-label">Membership plans</h3>
+        <p className="featbody">Every plan includes the dashboard, all tools, and unlimited motion PDFs with filing instructions at no extra charge.</p>
+        <MembershipPlans />
       </section>
 
       <section className="homesec honest" aria-labelledby="honest-h">
@@ -214,7 +208,7 @@ export default function Home() {
 
       <section className="homecta">
         <h2>Ready when you are</h2>
-        <p className="seclede">The interview is free. You only pay $3 when your PDF is ready.</p>
+        <p className="seclede">Start for free, then buy a PDF for $5 or download it at no extra charge with membership.</p>
         <Link className="btn primary big" href="/interview">Start my motion</Link>
         <Link className="btn ghost big" href="/library">Browse the library</Link>
       </section>

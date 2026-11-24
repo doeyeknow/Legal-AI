@@ -1,5 +1,5 @@
 import type { MotionDef } from './motions/types';
-import { resolveZip, STATE_FALLBACKS } from './courts';
+import { resolveZip, NM_BY_COUNTY, STATE_FALLBACKS } from './courts';
 
 export interface FilingStep {
   text: string;
@@ -21,7 +21,15 @@ export function buildFilingInfo(
   countyAnswer: string,
   motion: MotionDef
 ): FilingInfo {
-  const res = resolveZip(zip);
+  const zipMatch = resolveZip(zip);
+  const explicitState = stateAnswer.trim().toLowerCase();
+  const county = countyAnswer.trim().replace(/\s+county$/i, '').toLowerCase();
+  const isNM = explicitState ? ['new mexico', 'nm'].includes(explicitState) : zipMatch.isNM;
+  const res = {
+    zip: zipMatch.zip, isNM,
+    county: isNM ? (county ? NM_BY_COUNTY[county] || null : zipMatch.county) : null,
+    approximate: isNM && !county && Boolean(zipMatch.county),
+  };
   const steps: FilingStep[] = [];
 
   steps.push({
@@ -43,12 +51,12 @@ export function buildFilingInfo(
     });
   } else if (res.isNM) {
     steps.push({
-      text: `Your ZIP is in New Mexico but we could not pin down the county from the ZIP alone. Your case belongs in ${countyAnswer || 'your'} County — confirm the county, then file at that county's District Court (or Magistrate/Metropolitan Court for small claims and many evictions).`,
+      text: `Confirm the filing court and county with the clerk before submitting. If your case is already open, use the court on your case documents. For a new case, the New Mexico Courts self-help site can help you identify where to file.`,
       links: [{ label: 'New Mexico Courts self-help', url: 'https://www.nmcourts.gov/self-help/' }],
     });
   } else {
     const st = (stateAnswer || '').trim();
-    const fb = Object.values(STATE_FALLBACKS).find(
+    const fb = STATE_FALLBACKS[st.toUpperCase()] || Object.values(STATE_FALLBACKS).find(
       (s) => s.name.toLowerCase() === st.toLowerCase()
     );
     steps.push({

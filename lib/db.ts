@@ -92,6 +92,24 @@ export function ensureSchema(): Promise<void> {
         expires_at TIMESTAMPTZ NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )`);
+      await query(`CREATE TABLE IF NOT EXISTS membership_grants (
+        stripe_source TEXT PRIMARY KEY,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        stripe_customer TEXT,
+        plan TEXT NOT NULL CHECK (plan IN ('weekly', 'yearly', 'lifetime')),
+        active BOOLEAN NOT NULL,
+        valid_until TIMESTAMPTZ,
+        checked_at TIMESTAMPTZ NOT NULL
+      )`);
+      await query(`CREATE INDEX IF NOT EXISTS membership_grants_user_idx ON membership_grants (user_id)`);
+      await query(`CREATE TABLE IF NOT EXISTS membership_checkouts (
+        user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        stripe_session TEXT NOT NULL
+      )`);
+      await query(`CREATE TABLE IF NOT EXISTS legacy_motion_downloads (
+        stripe_session TEXT PRIMARY KEY,
+        packet_hash TEXT NOT NULL
+      )`);
       // ---- Dashboard: cases and everything that hangs off them ----
       // Every row carries the owning user's id (directly or through
       // its case) and every query in lib/cases.ts scopes by it.

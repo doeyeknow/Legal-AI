@@ -3,7 +3,7 @@ import { ImageResponse } from 'next/og';
 // Social share card (Open Graph / Twitter) for every page that
 // doesn't set its own: dark field, gold scales, the promise.
 export const runtime = 'edge';
-export const alt = 'quikForm — court motions prepared from your answers, $3';
+export const alt = 'quikForm — court motion PDFs with filing instructions for $5';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -28,7 +28,7 @@ export default function OgImage() {
           Your court motion, prepared from your answers.
         </div>
         <div style={{ fontSize: 32, color: '#A7ABB5', marginTop: 26 }}>
-          Free interview · $3 filing-ready PDF · Hundreds of court documents
+          Free interview · $5 PDF with filing instructions · Membership plans
         </div>
         <div style={{ fontSize: 22, color: '#848B99', marginTop: 'auto' }}>
           Document preparation for people representing themselves — not a law firm.

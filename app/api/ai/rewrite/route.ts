@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionUser } from '@/lib/auth';
 import { aiConfigured, rewriteProfessionally, type RewriteItem } from '@/lib/ai';
+import { requireUser } from '@/lib/api-guard';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -56,6 +57,10 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as {
     items?: unknown; purpose?: unknown; context?: unknown;
   } | null;
+  if (body?.purpose === 'email') {
+    const member = await requireUser(req);
+    if ('error' in member) return member.error;
+  }
   const raw = Array.isArray(body?.items) ? body!.items : [];
   const items: RewriteItem[] = [];
   let total = 0;

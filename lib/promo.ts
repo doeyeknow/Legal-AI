@@ -2,9 +2,9 @@
 // case-insensitively, ignoring surrounding spaces. Server-side
 // only — the client never decides a document is free; both the
 // checkout route and the PDF route re-validate the code.
-const FREE_CODES = new Set<string>(["jewlz"]);
-
 export function isValidCoupon(code: unknown): boolean {
   if (typeof code !== "string") return false;
-  return FREE_CODES.has(code.trim().toLowerCase());
+  const coupon = code.trim().toLowerCase();
+  if (!coupon) return false;
+  return (process.env.LEGAL_FREE_COUPONS || '').split(',').some((item) => item.trim().toLowerCase() === coupon);
 }

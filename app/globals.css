@@ -494,15 +494,8 @@ main { max-width: 860px; margin: 0 auto; padding: 20px 16px 40px; position: rela
 /* Simulated hearing */
 .progress { font-size: 13.5px; color: var(--ink2); }
 
-/* Voice layer — the interview voice-call bar, the composer's mic
-   button, and the practice page's voice control. Plain presentation:
-   nothing here changes layout when voice is off. */
-.voicebar {
-  flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 8px 16px; border-bottom: 1px solid var(--line);
-  background: rgba(11, 14, 20, 0.88); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-}
-.voicebar .btn, .voicectl .btn { margin: 0; }
+/* Voice controls for the interview and practice page. */
+.voicectl .btn { margin: 0; }
 .vstatus { font-size: 13.5px; color: var(--ink2); }
 .voicenote { flex-basis: 100%; margin: 0; font-size: 13.5px; color: var(--ink2); }
 .micbtn.listening { background: #b3261e; border-color: #b3261e; color: #fff; }
@@ -675,7 +668,6 @@ main:has(.apphome) { padding: 6px 12px; display: flex; flex-direction: column; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .stepprogress { flex: none; font-size: 12.5px; }
-.stephead .voicebtn { margin: 0; flex: none; font-size: 13px; padding: 7px 10px; }
 .voicestrip {
   flex: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 6px 14px; border-bottom: 1px solid var(--line);
@@ -1116,7 +1108,7 @@ main:has(.finderwin) { overflow: hidden; padding: 0; max-width: none; }
 .catitem > svg { color: var(--gold); }
 .libcat-head svg { color: var(--gold); }
 .dashnav a svg { margin-right: 2px; }
-.micbtn svg, .voicebtn svg, .voicectl .btn svg { margin-right: 1px; }
+.micbtn svg, .voicectl .btn svg { margin-right: 1px; }
 
 /* Popup modal (components/Modal.tsx) — bottom sheet on phones,
    centered card on desktop. The page behind never scrolls; a long
@@ -1869,6 +1861,15 @@ main:has(.homepage) { max-width: none; padding: 0; scroll-behavior: smooth; }
 .pricegrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 14px; }
 .pricecard { display: flex; flex-direction: column; gap: 6px; padding: 20px 18px; border: 1px solid var(--line); border-radius: 14px; background: rgba(22, 26, 36, 0.72); }
 .pricecard.main { border-color: var(--gold); background: linear-gradient(180deg, rgba(44, 39, 22, 0.9), rgba(22, 26, 36, 0.8)); }
+.pricecard h3, .pricecard p { margin: 0; }
+.pricecard .btn { margin-top: auto; align-self: flex-start; }
+.price-reference { opacity: 0.82; font-weight: 500; }
+.priceterm { font-size: 0.52em; font-weight: 500; }
+.single-motion { margin-top: 14px; display: flex; flex-direction: row; align-items: center; gap: 14px 22px; flex-wrap: wrap; }
+.single-motion > div { flex: 1 1 250px; }
+.single-motion .btn { margin: 0; align-self: center; }
+.membership-label { margin: 24px 0 6px; }
+.membershippage .pricegrid { margin-bottom: 18px; }
 .pricename { font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink2); font-weight: bold; }
 .priceamt { font-size: 34px; font-weight: bold; color: var(--gold); line-height: 1.1; }
 

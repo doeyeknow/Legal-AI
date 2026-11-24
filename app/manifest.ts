@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'quikForm — Court motions, prepared from your answers',
     short_name: 'quikForm',
     description:
-      'Answer plain-English questions and get a filing-ready court motion PDF for $3. Document preparation, not a law firm.',
+      'Prepare a motion and download the PDF with filing instructions for $5, or get unlimited downloads with membership.',
     start_url: '/',
     scope: '/',
     display: 'standalone',

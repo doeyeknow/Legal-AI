@@ -43,6 +43,7 @@ export class SpeechPlayer {
   private queue: string[] = [];
   private audio: HTMLAudioElement | null = null;
   private objectUrl: string | null = null;
+  private finishPlayback: (() => void) | null = null;
   private pumping = false;
   private generation = 0;
   private unavailable = false;
@@ -58,6 +59,7 @@ export class SpeechPlayer {
     this.generation += 1;
     this.queue = [];
     this.teardownAudio();
+    this.finishPlayback?.();
     this.onActiveChange?.(false);
   }
 
@@ -109,6 +111,8 @@ export class SpeechPlayer {
       if (gen === this.generation && this.queue.length === 0) {
         this.onActiveChange?.(false);
         if (!this.unavailable) this.onDrained?.();
+      } else if (this.queue.length > 0 && !this.unavailable) {
+        void this.pump();
       }
     }
   }
@@ -123,9 +127,11 @@ export class SpeechPlayer {
       this.audio = audio;
       this.onActiveChange?.(true);
       const done = () => {
-        if (this.audio === audio) this.audio = null;
+        if (this.audio === audio) this.teardownAudio();
+        if (this.finishPlayback === done) this.finishPlayback = null;
         resolve();
       };
+      this.finishPlayback = done;
       audio.onended = done;
       audio.onerror = done;
       // A blocked/failed play must never stall the queue.

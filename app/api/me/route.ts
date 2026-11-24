@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { activeMembership } from "@/lib/membership";
 import {
   ACCOUNTS_MESSAGE,
   authConfigured,
@@ -24,7 +25,9 @@ export async function GET(req: NextRequest) {
     );
   }
   const user = await getSessionUser(req);
-  return NextResponse.json({ user });
+  const membership = user ? await activeMembership(user.id).catch(() => null) : null;
+  return NextResponse.json({ user, membership: membership?.plan || null },
+    { headers: { 'Cache-Control': 'private, no-store' } });
 }
 
 // PATCH: update the signed-in user's basic-info profile. This is
