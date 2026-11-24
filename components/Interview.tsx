@@ -97,8 +97,8 @@ const STORE_KEY = 'legal-interview-v1';
 
 export default function Interview() {
   const [msgs, setMsgs] = useState<Msg[]>([
-    { from: 'bot', text: 'Tell me what is going on, in your own words. I will match it to the right court motion, ask its questions one at a time, and prepare a filing-ready document.' },
-    { from: 'bot', text: 'The interview is free. A prepared document is $3 — charged only when your PDF is generated.' },
+    { from: 'bot', text: 'Hey there! How can I help?' }
+    
   ]);
   const [stage, setStage] = useState<Stage>('boot');
   const [input, setInput] = useState('');
