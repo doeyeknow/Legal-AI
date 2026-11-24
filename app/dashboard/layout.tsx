@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import FinderShell from '@/components/FinderShell';
+import { requireMemberPage } from '@/lib/membership-page';
 
 // Private, signed-in pages: never indexed.
 export const metadata: Metadata = {
@@ -7,7 +8,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true },
 };
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  await requireMemberPage();
   return (
     <FinderShell>
       <div className="dashpage">{children}</div>

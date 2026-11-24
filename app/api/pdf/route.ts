@@ -8,29 +8,32 @@ import { getCaseFacts } from '@/lib/inbox';
 import { isValidCoupon } from '@/lib/promo';
 import { stripeKeyStatus, stripeProblemMessage } from '@/lib/stripe-config';
 import type { Answers } from '@/lib/motions/types';
+import { activeMembership } from '@/lib/membership';
+import { claimLegacyPacket, localFreeDownload, packetHash, sessionAllowsPacket } from '@/lib/motion-payment';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Generates the PDF only after payment is verified (Stripe session paid,
-// $3.00), or under the local-only LEGAL_DEV_FREE=1 bypass.
+// An active membership or a verified payment for this exact packet is required.
 export async function POST(req: NextRequest) {
-  const body = await req.json().catch(() => ({}));
+  const body = (await req.json().catch(() => null)) || {};
   const motion = getMotion(String(body.motionId || ''));
   if (!motion) {
     return NextResponse.json({ error: 'unknown_motion' }, { status: 400 });
   }
-  const answers = (body.answers || {}) as Answers;
-  if (!answers.fullName || !answers.zip) {
+  const answers = Object.fromEntries(Object.entries(body.answers || {}).filter(([, value]) => typeof value === 'string')) as Answers;
+  if (!answers.fullName?.trim() || !answers.zip?.trim()) {
     return NextResponse.json({ error: 'incomplete', message: 'The interview answers are incomplete.' }, { status: 400 });
   }
 
-  const devFree = process.env.LEGAL_DEV_FREE === '1';
+  const user = await getSessionUser(req);
+  const member = user ? await activeMembership(user.id).catch(() => null) : null;
+  const devFree = localFreeDownload();
   // A valid coupon makes the document free, with or without Stripe
   // configured. The code is re-validated here — the client saying
   // "coupon" is never enough on its own.
   const couponFree = isValidCoupon(body.coupon);
-  if (!devFree && !couponFree) {
+  if (!member && !devFree && !couponFree) {
     const ks = stripeKeyStatus();
     if (!ks.ok) {
       return NextResponse.json(
@@ -39,15 +42,17 @@ export async function POST(req: NextRequest) {
       );
     }
     const key = ks.key;
-    const sessionId = String(body.sessionId || '');
-    if (!sessionId) {
+    const sessionId = body.sessionId;
+    if (typeof sessionId !== 'string' || !/^cs_[A-Za-z0-9_]{8,200}$/.test(sessionId)) {
       return NextResponse.json({ error: 'payment_required', message: 'Payment is required before the document is generated.' }, { status: 402 });
     }
     try {
       const stripe = new Stripe(key);
-      const session = await stripe.checkout.sessions.retrieve(sessionId);
-      if (session.payment_status !== 'paid' || session.amount_total !== 300) {
-        return NextResponse.json({ error: 'payment_not_completed', message: 'That payment has not completed.' }, { status: 402 });
+      const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ['payment_intent.latest_charge'] });
+      const hash = packetHash(key, motion.id, body);
+      const access = sessionAllowsPacket(session, motion.id, hash);
+      if (!access || (access === 'legacy' && !(await claimLegacyPacket(sessionId, hash)))) {
+        return NextResponse.json({ error: 'payment_not_completed', message: 'That payment could not be verified for this motion packet.' }, { status: 402 });
       }
     } catch {
       return NextResponse.json({ error: 'payment_check_failed', message: 'We could not verify that payment.' }, { status: 402 });
@@ -61,8 +66,7 @@ export async function POST(req: NextRequest) {
   // Unconfirmed facts are never in the bag — see lib/inbox.ts.
   let caseFactsBag: Answers | undefined;
   let ownedCaseId: string | null = null;
-  const user = await getSessionUser(req).catch(() => null);
-  if (user && typeof body.caseId === 'string' && body.caseId) {
+  if (user && member && !body.sessionId && typeof body.caseId === 'string' && body.caseId) {
     try {
       const lite = await getOwnedCaseLite(user.id, body.caseId);
       if (lite) {
@@ -82,6 +86,7 @@ export async function POST(req: NextRequest) {
     signaturePngDataUrl: typeof body.signature === 'string' ? body.signature : null,
     feeWaiverAdded: body.feeWaiverAdded === true,
     caseFacts: caseFactsBag,
+    includeFilingInstructions: true,
   });
 
   // Dashboard save: a signed-in user's finished document is filed to
@@ -90,7 +95,7 @@ export async function POST(req: NextRequest) {
   // skip this entirely and their flow is unchanged.
   let savedCaseId: string | null = null;
   try {
-    if (user) {
+    if (user && member) {
       savedCaseId = await saveDocumentForUser(user.id, {
         motion,
         answers,
@@ -110,6 +115,7 @@ export async function POST(req: NextRequest) {
   const headers: Record<string, string> = {
     'Content-Type': 'application/pdf',
     'Content-Disposition': `attachment; filename="${motion.id}.pdf"`,
+    'Cache-Control': 'private, no-store',
   };
   if (savedCaseId) headers['x-legal-case-id'] = savedCaseId;
 

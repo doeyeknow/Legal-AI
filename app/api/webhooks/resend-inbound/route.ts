@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { dbConfigured } from '@/lib/db';
 import { inboxDomain, resolveInboxLocal, storeInboundMessage } from '@/lib/inbox';
+import { activeMembership } from '@/lib/membership';
 import { notifyNewCourtMail } from '@/lib/push';
 
 // POST /api/webhooks/resend-inbound — Resend inbound (email.received).
@@ -127,6 +128,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ received: true, deadLetter: true });
   }
 
+  // Keep copies of court notices sent to a previously issued inbox address, but pause
+  // paid parsing/notifications until membership is active again. Never discard legal mail.
+  const member = await activeMembership(owner.userId).catch(() => null);
   // Owned address: fetch the full content now (attachment URLs
   // expire), store, parse, propose — all in the shared path. A
   // genuinely new message (not a redelivery) notifies the owner:
@@ -190,6 +194,7 @@ export async function POST(req: Request) {
       headers: (full.headers || {}) as Record<string, unknown>,
       receivedAt: data.created_at || null,
       attachments,
+      deferParse: !member,
     });
   } catch {
     // Keep a metadata-only row in 'received' status; the sweeper
@@ -210,7 +215,7 @@ export async function POST(req: Request) {
       deferParse: true,
     }).catch(() => null);
   }
-  if (stored && !stored.duplicate) {
+  if (member && stored && !stored.duplicate) {
     await notifyNewCourtMail(owner.userId, fromName || fromEmail);
   }
   return NextResponse.json({ received: true });

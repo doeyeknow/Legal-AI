@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, rgb, PDFPage, PDFFont } from 'pdf-lib';
 import type { MotionDef, Answers } from './motions/types';
 import { fill, DISCLAIMER } from './motions/types';
 import { isCriminalAdversarial, statePartyName } from './state-party';
+import { buildFilingInfo } from './filing-steps';
 
 const INK = rgb(0.08, 0.08, 0.1);
 const GRAY = rgb(0.35, 0.35, 0.38);
@@ -17,6 +18,7 @@ class Writer {
   regular!: PDFFont;
   bold!: PDFFont;
   italic!: PDFFont;
+  filingSection = false;
 
   async init(doc: PDFDocument) {
     this.doc = doc;
@@ -36,6 +38,12 @@ class Writer {
       font: this.italic,
       color: GRAY,
     });
+    if (this.filingSection) {
+      this.page.drawText('FILING INSTRUCTIONS - KEEP THESE PAGES. DO NOT FILE THEM WITH THE COURT.', {
+        x: MARGIN, y: this.y, size: 9, font: this.bold, color: GRAY,
+      });
+      this.y -= 20;
+    }
   }
 
   ensure(space: number) {
@@ -160,6 +168,7 @@ export interface PdfInput {
    *  underlay beneath every fill() call: the filer's own answers
    *  always win, and anything unconfirmed is never in this bag. */
   caseFacts?: Answers;
+  includeFilingInstructions?: boolean;
 }
 
 export async function generateMotionPdf(input: PdfInput): Promise<Uint8Array> {
@@ -339,6 +348,19 @@ export async function generateMotionPdf(input: PdfInput): Promise<Uint8Array> {
     w.para(`${a.fullName || ''}, appearing pro se`, { spaceAfter: 10 });
   }
 
+  if (input.includeFilingInstructions) {
+    const info = buildFilingInfo(a.zip || '', a.state || '', a.county || '', motion);
+    w.filingSection = true;
+    w.newPage();
+    w.heading(info.heading);
+    if (info.approximate) w.para('The county was estimated from your ZIP code. Confirm it against your case paperwork before filing.');
+    for (const [index, step] of info.steps.entries()) {
+      w.para(`${index + 1}. ${step.text}`, { size: 11 });
+      for (const link of step.links || []) {
+        w.para(`${link.label}: ${link.url}`, { size: 9, indent: 10 });
+      }
+    }
+  }
   doc.setTitle(`${motion.name} — ${a.fullName || 'pro se'}`);
   doc.setAuthor('quikform.org (document preparation)');
   return doc.save();

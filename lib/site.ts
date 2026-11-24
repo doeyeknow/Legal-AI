@@ -5,7 +5,7 @@ export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://quikform.o
 export const SITE_NAME = 'quikForm';
 export const SITE_TAGLINE = 'Court motions, prepared from your answers';
 export const SITE_DESCRIPTION =
-  'Answer plain-English questions and get a filing-ready court motion PDF for $3. Continuances, custody and support changes, contempt, fee waivers, eviction stays, and hundreds more court documents for people representing themselves. Document preparation, not a law firm.';
+  'Prepare a court motion with a free interview. Download the PDF and filing instructions for $5, or join to use the dashboard, all tools, and unlimited motion downloads. Document preparation, not a law firm.';
 export const SITE_KEYWORDS = [
   'court motion',
   'self-represented litigant',
