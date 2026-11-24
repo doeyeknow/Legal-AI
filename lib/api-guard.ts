@@ -5,8 +5,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { ACCOUNTS_MESSAGE, authConfigured, getSessionUser, type AccountUser } from "./auth";
+import { activeMembership } from "./membership";
 
-export async function requireUser(
+export async function requireAccount(
   req: NextRequest,
 ): Promise<{ user: AccountUser } | { error: NextResponse }> {
   if (!authConfigured()) {
@@ -24,6 +25,21 @@ export async function requireUser(
     };
   }
   return { user };
+}
+
+/** Dashboard routes require both a session and an active entitlement. */
+export async function requireUser(req: NextRequest): ReturnType<typeof requireAccount> {
+  const account = await requireAccount(req);
+  if ('error' in account) return account;
+  try {
+    if (await activeMembership(account.user.id)) return account;
+    return { error: NextResponse.json(
+      { error: 'membership_required', message: 'An active membership is required to use the dashboard and tools.' },
+      { status: 403 },
+    ) };
+  } catch {
+    return { error: dbUnavailable() };
+  }
 }
 
 export function dbUnavailable(): NextResponse {

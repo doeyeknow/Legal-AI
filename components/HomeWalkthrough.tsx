@@ -51,10 +51,10 @@ const STEPS: Step[] = [
   },
   {
     icon: 'check',
-    title: 'Review, sign, and pay $3',
+    title: 'Review, sign, and choose how to pay',
     short: 'Filing-ready PDF',
     body:
-      'Check every answer and fix anything with one tap. Sign on screen, pay $3, and download ' +
+      'Check every answer and fix anything with one tap. Sign on screen, then pay $5 or use your membership to download ' +
       'a filing-ready PDF. Need a fee waiver? We add that form for free.',
     screen: ScreenReview,
   },
@@ -63,7 +63,7 @@ const STEPS: Step[] = [
     title: 'Stay on top of your case',
     short: 'Timeline & mail',
     body:
-      'Your document is saved to a case with its deadlines, court mail, and hearing date, all ' +
+      'With membership, your document is saved to a case with its deadlines, court mail, and hearing date, all ' +
       'shown on one timeline. Add your own events as things happen.',
     screen: ScreenCase,
   },
@@ -239,7 +239,7 @@ function ScreenReview() {
         </div>
       ))}
       <div className="msig">J. Rivera</div>
-      <div className="mbtn primary">Get my PDF · $3</div>
+      <div className="mbtn primary">Get my PDF · $5</div>
     </>
   );
 }

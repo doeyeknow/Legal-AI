@@ -132,8 +132,11 @@ export function clearedSessionCookie(): string {
 }
 
 export async function getSessionUser(req: NextRequest): Promise<AccountUser | null> {
+  return getSessionUserFromToken(req.cookies.get(SESSION_COOKIE)?.value);
+}
+
+export async function getSessionUserFromToken(token?: string): Promise<AccountUser | null> {
   if (!authConfigured()) return null;
-  const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   try {
     await ensureSchema();

@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 // are not configured yet (/api/me answers 503) it renders nothing,
 // so the live site never advertises a feature that is not set up.
 export default function AccountNav() {
-  const [state, setState] = useState<'loading' | 'off' | 'out' | 'in'>('loading');
+  const [state, setState] = useState<'loading' | 'off' | 'out' | 'in' | 'member'>('loading');
 
   useEffect(() => {
     let live = true;
@@ -18,7 +18,7 @@ export default function AccountNav() {
           return;
         }
         const data = await res.json().catch(() => ({}));
-        setState(data.user ? 'in' : 'out');
+        setState(data.user ? data.membership ? 'member' : 'in' : 'out');
       })
       .catch(() => {
         if (live) setState('off');
@@ -29,10 +29,10 @@ export default function AccountNav() {
   }, []);
 
   if (state === 'loading' || state === 'off') return null;
-  if (state === 'in') {
+  if (state === 'in' || state === 'member') {
     return (
       <>
-        <a href="/dashboard">Dashboard</a>
+        {state === 'member' ? <a href="/dashboard">Dashboard</a> : <a href="/membership">Membership</a>}
         <a href="/account">My account</a>
       </>
     );

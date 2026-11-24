@@ -862,6 +862,8 @@ export async function allWatches(): Promise<
     `SELECT w.id, w.case_id, w.portal_key, w.case_number, w.party_name,
             w.last_checked_at, w.last_note, w.created_at, c.title AS case_title
      FROM watches w JOIN cases c ON c.id = w.case_id
+     WHERE EXISTS (SELECT 1 FROM membership_grants g WHERE g.user_id = c.user_id AND g.active
+       AND (g.plan = 'lifetime' OR g.valid_until > now()))
      ORDER BY w.created_at ASC`,
   );
   return rows.map((w) => ({

@@ -30,12 +30,14 @@ export async function GET(
       // The facts snapshot stored at generation time — never a live
       // re-read, so this copy matches the original document.
       caseFacts: doc.caseFacts || undefined,
+      includeFilingInstructions: req.nextUrl.searchParams.get('filing') !== '0',
     });
     return new NextResponse(Buffer.from(pdf), {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="${motion.id}.pdf"`,
+        'Cache-Control': 'private, no-store',
       },
     });
   } catch {

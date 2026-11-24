@@ -51,7 +51,7 @@ function ProfileInputs({
   );
 }
 
-export default function AccountPanel() {
+export default function AccountPanel({ membershipLink }: { membershipLink?: string }) {
   const [mode, setMode] = useState<Mode>('loading');
   const [tab, setTab] = useState<'in' | 'up'>('in');
   const [user, setUser] = useState<MeUser | null>(null);
@@ -62,6 +62,7 @@ export default function AccountPanel() {
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [member, setMember] = useState(false);
 
   async function load() {
     try {
@@ -72,6 +73,7 @@ export default function AccountPanel() {
       }
       const data = await res.json().catch(() => ({}));
       if (data.user) {
+        setMember(Boolean(data.membership));
         setUser(data.user);
         setForm(profileOf(data.user));
         setMode('in');
@@ -109,6 +111,8 @@ export default function AccountPanel() {
       setForm(profileOf(data.user));
       setPassword('');
       setMode('in');
+      if (membershipLink) window.location.assign(membershipLink);
+      else void load();
     } catch {
       setError('Something went wrong. Please try again.');
     } finally {
@@ -149,6 +153,7 @@ export default function AccountPanel() {
       /* the panel resets either way */
     }
     setUser(null);
+    setMember(false);
     setForm(EMPTY_PROFILE);
     setPassword('');
     setNote(null);
@@ -199,6 +204,7 @@ export default function AccountPanel() {
           <Link className="btn" href="/interview">
             Start an interview
           </Link>
+          <Link className="btn" href={membershipLink || '/membership'}>{member ? 'Manage membership' : 'See membership plans'}</Link>
           <button className="btn ghost" disabled={busy} onClick={signOut}>
             Sign out
           </button>
@@ -218,8 +224,7 @@ export default function AccountPanel() {
           </Modal>
         )}
       </div>
-      <InboxAddressCard />
-      <EmailPushToggle />
+      {member && <><InboxAddressCard /><EmailPushToggle /></>}
       </>
     );
   }

@@ -16,7 +16,7 @@ export function generateMetadata({
   if (m) {
     const url = `/interview?motion=${encodeURIComponent(m.id)}`;
     return {
-      title: `${m.name} — prepare it online for $3`,
+      title: `${m.name} — prepare it online and download for $5`,
       description: `${m.purpose} Answer plain-English questions, one at a time, and get a filing-ready ${m.name} PDF. ${m.category}. Document preparation, not legal advice.`.slice(0, 300),
       alternates: { canonical: url },
       openGraph: { url, title: `${m.name} | quikForm`, description: m.purpose },
@@ -26,7 +26,7 @@ export function generateMetadata({
   return {
     title: 'Start your court document — free interview',
     description:
-      'Describe your situation in your own words. We match it to the right court motion, ask its questions one page at a time, and prepare a filing-ready PDF for $3.',
+      'Prepare a court motion with a free interview. Download the PDF and filing instructions for $5, or get the download included with membership.',
     alternates: { canonical: '/interview' },
     robots: isPrivate ? { index: false, follow: false } : undefined,
   };

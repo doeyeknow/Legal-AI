@@ -1376,6 +1376,8 @@ export async function sweepInbox(): Promise<{ retried: number; failed: number; p
   const stuck = await query<{ id: string; user_id: string; raw_meta: Record<string, unknown> }>(
     `SELECT id, user_id, raw_meta FROM inbound_messages
      WHERE status = 'received' AND user_id IS NOT NULL
+       AND EXISTS (SELECT 1 FROM membership_grants g WHERE g.user_id = inbound_messages.user_id AND g.active
+         AND (g.plan = 'lifetime' OR g.valid_until > now()))
        AND received_at < now() - interval '2 minutes' LIMIT 50`,
   );
   let retried = 0;

@@ -125,6 +125,9 @@ export default function Interview() {
   const [signature, setSignature] = useState<string | null>(null);
   const [feeWaiverAdded, setFeeWaiverAdded] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [member, setMember] = useState(false);
+  const restoredPacket = useRef(false);
   const [coupon, setCoupon] = useState('');
   const [filing, setFiling] = useState<FilingInfo | null>(null);
   const [restoredSession, setRestoredSession] = useState<string | null>(null);
@@ -256,7 +259,8 @@ export default function Interview() {
     if (caseParam && !params.get('payment')) {
       caseIdRef.current = caseParam;
     }
-    if (params.get('payment') === 'success' && params.get('session_id')) {
+    const returning = params.get('payment');
+    if (returning) {
       try {
         const raw = sessionStorage.getItem(STORE_KEY);
         if (raw) {
@@ -272,16 +276,16 @@ export default function Interview() {
             if (saved.subject === 'self' || saved.subject === 'other') {
               setSubject(saved.subject);
             }
-            setRestoredSession(params.get('session_id'));
+            restoredPacket.current = true;
+            if (returning === 'success') setRestoredSession(params.get('session_id'));
             setStage('pay');
-            say('bot', 'Welcome back — your payment went through. Click below and your document will be generated and downloaded.');
+            if (returning === 'success') say('bot', 'Welcome back. Select Download to verify your payment and get your motion PDF.');
+            else if (returning === 'cancelled') say('bot', 'You returned from checkout. Your answers are still here.');
             return;
           }
         }
       } catch { /* fall through to a fresh interview */ }
-      say('bot', 'Your payment went through, but this browser no longer has your interview answers. Please run the interview again — and contact us if you were charged, so we can make it right.');
-    } else if (params.get('payment') === 'cancelled') {
-      say('bot', 'No problem — checkout was cancelled and nothing was charged. Your answers are still here if you want to continue.');
+      if (returning === 'success') say('bot', 'This browser no longer has the interview answers used at checkout. If you were charged, contact us with your receipt before paying again.');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -294,27 +298,19 @@ export default function Interview() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('payment')) {
-      // Returning from Stripe: when the restore effect above claimed
-      // the session it owns the stage ('pay') — leave it alone. In
-      // every other return case (cancelled, or the saved answers are
-      // gone) start over at the situation question.
-      setAcct('guest');
-      if (params.get('payment') === 'success' && params.get('session_id')) {
-        try {
-          const raw = sessionStorage.getItem(STORE_KEY);
-          const saved = raw ? JSON.parse(raw) : null;
-          if (saved && getMotion(saved.motionId)) return;
-        } catch {
-          /* fall through to a fresh start */
-        }
-      }
-      setStage('situation');
-      return;
+      if (!restoredPacket.current) setStage('situation');
     }
     let live = true;
     fetch('/api/me')
       .then(async (res) => {
         if (!live) return;
+        if (params.get('payment')) {
+          const data = await res.json().catch(() => ({}));
+          if (!live) return;
+          setAcct(data.user ? 'user' : 'guest');
+          setMember(Boolean(data.membership));
+          return;
+        }
         if (res.status === 503) {
           setAcct('off');
           beginFresh();
@@ -333,6 +329,7 @@ export default function Interview() {
           });
           setAccountEmail(u.email || '');
           setAcct('user');
+          setMember(Boolean(data.membership));
           // A ?draft=<id> link resumes that interview instead of
           // opening with the who-question. Anything wrong with the
           // draft (missing, not theirs, motion gone) falls back to
@@ -358,7 +355,7 @@ export default function Interview() {
       .catch(() => {
         if (!live) return;
         setAcct('off');
-        beginFresh();
+        if (!params.get('payment')) beginFresh();
       });
     return () => {
       live = false;
@@ -436,7 +433,7 @@ export default function Interview() {
   // on every change. Best-effort: a failed save is silent and the
   // next change tries again; the interview never blocks on it.
   useEffect(() => {
-    if (acct !== 'user' || !motion) {
+    if (acct !== 'user' || !member || !motion) {
       draftSnapRef.current = null;
       return;
     }
@@ -475,7 +472,7 @@ export default function Interview() {
         .catch(() => { /* best-effort: the next change retries */ });
     }, 1500);
     return () => clearTimeout(t);
-  }, [acct, motion, answers, subject, feeWaiverAdded, stage]);
+  }, [acct, member, motion, answers, subject, feeWaiverAdded, stage]);
 
   // Flush the newest snapshot when the page goes away mid-interview,
   // so closing the tab doesn't lose the last answers typed.
@@ -674,13 +671,13 @@ export default function Interview() {
       setSituationText(t);
       // Someone facing a pending criminal charge: look for ways to
       // get it dropped before drafting anything.
-      if (looksCriminal(t)) {
+      if (member && looksCriminal(t)) {
         say('bot', 'Since this is a criminal charge, a few yes / no questions first could turn up a way to get it dismissed.');
         setStage('defense');
       } else {
         setStage('confirm');
       }
-    } else if (looksCriminal(t)) {
+    } else if (member && looksCriminal(t)) {
       setSituationText(t);
       say('bot', 'Since this is a criminal charge, a few yes / no questions first could turn up a way to get it dismissed.');
       setStage('defense');
@@ -1477,27 +1474,53 @@ export default function Interview() {
     enterReview();
   }
 
-  async function startPayment() {
-    if (!motion) return;
-    setPayError(null);
+  function checkoutPacket() {
+    return motion ? {
+      motionId: motion.id, answers: withStateParty(motion, answers), signature, feeWaiverAdded,
+      subject, draftId: draftIdRef.current, caseId: caseIdRef.current,
+    } : null;
+  }
+
+  function openMembership() {
+    const packet = checkoutPacket();
+    if (!packet) return;
     try {
+      sessionStorage.setItem(STORE_KEY, JSON.stringify(packet));
+      window.location.assign('/membership?return=interview');
+    } catch { setPayError('This browser could not keep your answers. Open the interview in a browser tab that allows session storage.'); }
+  }
+
+  async function startPayment() {
+    const packet = checkoutPacket();
+    if (!packet || checkoutBusy) return;
+    setPayError(null);
+    setCheckoutBusy(true);
+    try {
+      if (!member) sessionStorage.setItem(STORE_KEY, JSON.stringify(packet));
       const res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ motionId: motion.id, coupon: coupon.trim() || undefined }),
+        body: JSON.stringify({ ...packet, coupon: coupon.trim() || undefined, memberOnly: member }),
       });
       const data = await res.json();
-      if (data.devFree) return generatePdf(null);
-      if (data.couponFree) return generatePdf(null, coupon.trim());
+      if (data.member) setMember(true);
+      if (data.devFree || data.member) return await generatePdf(null);
+      if (data.couponFree) return await generatePdf(null, coupon.trim());
+      if (data.error === 'membership_required') setMember(false);
       if (data.url) {
-        sessionStorage.setItem(STORE_KEY, JSON.stringify({ motionId: motion.id, answers: withStateParty(motion, answers), signature, feeWaiverAdded, subject, draftId: draftIdRef.current, caseId: caseIdRef.current }));
+        if (member) {
+          // Membership could have expired since this page loaded. Do not redirect to a paid checkout without the buyer choosing it.
+          setMember(false);
+          setPayError('Your membership is not active. Choose the $5 one-time purchase or renew your membership.');
+          return;
+        }
         window.location.href = data.url;
         return;
       }
       setPayError(data.message || 'Payments are not available right now.');
     } catch {
       setPayError('Something went wrong starting checkout. No charge was made.');
-    }
+    } finally { setCheckoutBusy(false); }
   }
 
   async function generatePdf(sessionId: string | null, couponCode?: string) {
@@ -1527,13 +1550,13 @@ export default function Interview() {
       link.download = `${motion.id}.pdf`;
       link.click();
       URL.revokeObjectURL(url);
-      say('bot', 'Your document is downloading. Print it, and file the whole packet — motion, any companions listed in it, and the certificate of service.');
+      say('bot', 'Your document is downloading. The PDF ends with filing instructions for you to keep. Do not file the instruction pages with the court.');
       const fres = await fetch('/api/courts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ motionId: motion.id, zip: answers.zip, state: answers.state, county: answers.county }),
-      });
-      if (fres.ok) setFiling(await fres.json());
+      }).catch(() => null);
+      if (fres?.ok) setFiling(await fres.json().catch(() => null));
       setStage('done');
     } catch {
       setPayError('The document could not be generated. If you paid, contact us and we will make it right.');
@@ -1596,7 +1619,7 @@ export default function Interview() {
         badges.push({ label: `Closer: ${c.name}`, action: () => chooseMotion(c) });
       }
     }
-    if (motion.category === 'Criminal & Post-Conviction' && looksCriminal(situationText || motion.name)) {
+    if (member && motion.category === 'Criminal & Post-Conviction' && looksCriminal(situationText || motion.name)) {
       badges.push({
         label: 'Check for ways to get the charges dropped',
         action: () => { say('user', 'Check for ways to get the charges dropped'); setStage('defense'); },
@@ -2570,13 +2593,15 @@ export default function Interview() {
               </h4>
               <p className="cardsub">
                 {restoredSession
-                  ? 'Your payment went through — generate your document below.'
-                  : coupon.trim()
+                  ? 'Verify your payment and download your PDF with filing instructions.'
+                  : member
+                    ? 'Your PDF and filing instructions are included with your membership.'
+                    : coupon.trim()
                     ? 'Your document will be generated with the coupon applied.'
-                    : 'Your filing-ready PDF — $3, charged only when it is generated.'}
+                    : 'Download your motion PDF with filing instructions for $5, or get it included with membership.'}
               </p>
               {payError && <p className="error">{payError}</p>}
-              {!restoredSession && (
+              {!restoredSession && !member && (
                 <div className="field">
                   <label htmlFor="coupon-code">Coupon code (optional)</label>
                   <input
@@ -2592,9 +2617,12 @@ export default function Interview() {
               {restoredSession ? (
                 <button className="btn primary big" onClick={() => generatePdf(restoredSession)}>Download my document</button>
               ) : (
-                <button className="btn primary big" onClick={startPayment}>
-                  {coupon.trim() ? 'Generate my document' : 'Generate my document — $3'}
-                </button>
+                <div className="choices">
+                  <button className="btn primary big" disabled={checkoutBusy} onClick={startPayment}>
+                    {checkoutBusy ? 'Please wait…' : member ? 'Download my included PDF' : coupon.trim() ? 'Apply coupon and download' : 'Get my PDF for $5'}
+                  </button>
+                  {!member && <button className="btn" disabled={checkoutBusy} onClick={openMembership}>See subscription plans</button>}
+                </div>
               )}
               <p className="fineprint cardfoot">
                 <HelpTip title="What's included?">
