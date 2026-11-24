@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Icon } from './icons';
 import { refreshCalendar } from '@/lib/calendar-store';
 import type { CommEntry } from '@/lib/dashboard-types';
+import { useCompanionRecognition } from './useCompanionRecognition';
 
 // The hearing companion in call mode: it listens (through the
 // browser's speech recognition) while the person is on a phone call
@@ -14,16 +15,6 @@ import type { CommEntry } from '@/lib/dashboard-types';
 // to the case's communication log, with the transcript (which the
 // person can switch off). It runs full-page from the calendar, or
 // embedded in the case view (embedded=true).
-
-interface SRResult { isFinal: boolean; 0: { transcript: string } }
-interface SREvent { resultIndex: number; results: { length: number; [i: number]: SRResult } }
-interface SRecognition {
-  continuous: boolean; interimResults: boolean; lang: string;
-  onresult: ((e: SREvent) => void) | null;
-  onend: (() => void) | null;
-  onerror: ((e: unknown) => void) | null;
-  start: () => void; stop: () => void;
-}
 
 interface Advice { title: string; say: string; tips: string[]; at: number }
 interface CallFact { kind: string; label: string; valueText: string; valueDate: string | null; valueTime: string | null }
@@ -95,10 +86,7 @@ export default function CallCompanion({
 }) {
   const [event, setEvent] = useState<CallEvent | null>(null);
   const [caseTitle, setCaseTitle] = useState('');
-  const [supported, setSupported] = useState<boolean | null>(null);
-  const [listening, setListening] = useState(false);
   const [finalText, setFinalText] = useState('');
-  const [interim, setInterim] = useState('');
   const [advice, setAdvice] = useState<Advice[]>([]);
   const [added, setAdded] = useState<Added[]>([]);
   const [errNote, setErrNote] = useState<string | null>(null);
@@ -110,20 +98,25 @@ export default function CallCompanion({
   const [finished, setFinished] = useState<{ summary: string } | null>(null);
   const [aiOn, setAiOn] = useState<boolean | null>(null);
 
-  const recogRef = useRef<SRecognition | null>(null);
-  const liveRef = useRef(false);
   const textRef = useRef('');
   const pendingRef = useRef('');
   const seenFacts = useRef(new Set<string>());
   const lastLocal = useRef<Record<string, number>>({});
   const startedAt = useRef<string>(new Date().toISOString());
   const busyRef = useRef(false);
+  const mic = useCompanionRecognition((chunk) => {
+    textRef.current = `${textRef.current} ${chunk}`.trim();
+    pendingRef.current = `${pendingRef.current} ${chunk}`;
+    setFinalText(textRef.current);
+    localCards(chunk);
+    if (pendingRef.current.length > 260) void flush();
+  }, `${caseId}:${eventId ?? ''}`);
+  const listening = mic.status === 'listening';
+  const micActive = mic.status !== 'idle';
 
   const callWith = whoInput.trim() || event?.people || (event?.title || '').replace(/^Call\s+/i, '').replace(/\s+at\s+[\d()+\s.-]+(ext\.\s*\d+)?$/i, '');
 
   useEffect(() => {
-    const w = window as unknown as Record<string, unknown>;
-    setSupported(Boolean(w.SpeechRecognition || w.webkitSpeechRecognition));
     if (eventId) {
       fetch(`/api/events/${eventId}`)
         .then((r) => (r.ok ? r.json() : null))
@@ -138,19 +131,15 @@ export default function CallCompanion({
         .then((b) => { if (b?.case?.title) setCaseTitle(b.case.title); })
         .catch(() => undefined);
     }
-    return () => {
-      liveRef.current = false;
-      try { recogRef.current?.stop(); } catch { /* stopped */ }
-    };
   }, [caseId, eventId]);
 
   // Ask for suggestions every few seconds while new words arrive.
   useEffect(() => {
-    if (!listening) return;
+    if (!micActive) return;
     const t = setInterval(() => { void flush(); }, 7000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listening]);
+  }, [micActive]);
 
   function localCards(chunk: string) {
     const now = Date.now();
@@ -224,59 +213,13 @@ export default function CallCompanion({
   }
 
   function start() {
-    const w = window as unknown as Record<string, unknown>;
-    const Ctor = (w.SpeechRecognition || w.webkitSpeechRecognition) as (new () => SRecognition) | undefined;
-    if (!Ctor) return;
     setErrNote(null);
-    const rec = new Ctor();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = 'en-US';
-    rec.onresult = (e) => {
-      let interimNow = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) {
-          const chunk = r[0].transcript;
-          textRef.current = `${textRef.current} ${chunk}`.trim();
-          pendingRef.current = `${pendingRef.current} ${chunk}`;
-          setFinalText(textRef.current);
-          localCards(chunk);
-          if (pendingRef.current.length > 260) void flush();
-        } else {
-          interimNow += r[0].transcript;
-        }
-      }
-      setInterim(interimNow);
-    };
-    rec.onend = () => {
-      if (liveRef.current) {
-        try { rec.start(); } catch { /* restart race */ }
-      } else {
-        setListening(false);
-      }
-    };
-    rec.onerror = () => {
-      setErrNote('The microphone reported a problem. Check the browser’s microphone permission, then start again.');
-    };
-    recogRef.current = rec;
-    liveRef.current = true;
     if (!textRef.current) startedAt.current = new Date().toISOString();
-    setListening(true);
-    try {
-      rec.start();
-    } catch {
-      setErrNote('Listening could not be started in this browser.');
-      setListening(false);
-      liveRef.current = false;
-    }
+    mic.start();
   }
 
   function stop() {
-    liveRef.current = false;
-    try { recogRef.current?.stop(); } catch { /* stopped */ }
-    setListening(false);
-    setInterim('');
+    mic.stop();
     void flush();
   }
 
@@ -302,6 +245,7 @@ export default function CallCompanion({
 
   async function finish() {
     stop();
+    setErrNote(null);
     setFinishing(true);
     try {
       const r = await fetch(`/api/cases/${caseId}/call`, {
@@ -327,6 +271,8 @@ export default function CallCompanion({
       } else {
         setErrNote('The call summary could not be saved. Try again in a moment.');
       }
+    } catch {
+      setErrNote('The call summary could not be saved. Check your connection and try again.');
     } finally {
       setFinishing(false);
     }
@@ -388,7 +334,9 @@ export default function CallCompanion({
           </li>
           <li>
             <strong>Put the call on speaker</strong> near this device, or call from another phone.
-            The companion hears through this device’s microphone; no audio is recorded or uploaded.
+            The companion uses this device’s microphone, not the phone line. Your browser may
+            send audio to its speech recognition service. quikForm receives transcript text
+            for suggestions and saves the transcript to the case only if you leave that option on.
           </li>
           <li>
             Suggestions are general information, not legal advice. Details it hears are added to
@@ -397,26 +345,26 @@ export default function CallCompanion({
         </ul>
       </div>
 
-      {supported === false && (
-        <p className="warn">
-          This browser does not offer speech recognition, so the companion cannot listen here. It
-          works in Chrome on Android and desktop. You can still add notes by hand below.
-        </p>
+      {mic.unavailable && (
+        <p className="warn">{mic.unavailable} You can still add notes by hand below.</p>
       )}
 
       {!finished && (
         <div className="livecontrols">
-          {!listening ? (
-            <button className="btn primary big" disabled={!supported} onClick={start}>
+          {!micActive ? (
+            <button className="btn primary big" disabled={!mic.ready || finishing} onClick={start}>
               <Icon name="headphones" size={18} /> {finalText ? 'Resume listening' : 'Start listening'}
             </button>
           ) : (
-            <button className="btn big stopbtn" onClick={stop}>Pause listening</button>
+            <button className="btn big stopbtn" onClick={stop}>{listening ? 'Pause listening' : 'Cancel'}</button>
           )}
-          {listening && <span className="livelabel">Listening — speak normally</span>}
+          <span className="livelabel" role="status">
+            {listening ? 'Listening: speak normally' : micActive ? 'Connecting to speech recognition…' : ''}
+          </span>
         </div>
       )}
-      {errNote && <p className="error">{errNote}</p>}
+      {!finished && mic.error && <p className="error" role="alert">{mic.error} You can still add notes by hand.</p>}
+      {errNote && <p className="error" role="alert">{errNote}</p>}
       {aiOn === false && listening && (
         <p className="fineprint">
           Smart suggestions aren’t set up on this site, so the companion is using its built-in
@@ -473,8 +421,8 @@ export default function CallCompanion({
       <section className="dashsection">
         <h2 className="srhead">What is being said</h2>
         <div className="transcript" aria-live="polite">
-          {finalText || interim ? (
-            <p>{finalText} <span className="interim">{interim}</span></p>
+          {finalText || mic.interim ? (
+            <p>{finalText} <span className="interim">{mic.interim}</span></p>
           ) : (
             <p className="fineprint">
               {listening ? 'Listening… the transcript appears here as people speak.' : 'The transcript appears here while listening is on.'}

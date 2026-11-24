@@ -1,26 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-
-// Minimal Web Speech API typing (not in the standard DOM lib).
-interface SRResult {
-  isFinal: boolean;
-  0: { transcript: string };
-}
-interface SREvent {
-  resultIndex: number;
-  results: { length: number; [i: number]: SRResult };
-}
-interface SRecognition {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onresult: ((e: SREvent) => void) | null;
-  onend: (() => void) | null;
-  onerror: ((e: unknown) => void) | null;
-  start: () => void;
-  stop: () => void;
-}
+import { useRef, useState } from 'react';
+import Link from 'next/link';
+import { useCompanionRecognition } from './useCompanionRecognition';
 
 interface Suggestion {
   key: string;
@@ -93,26 +75,14 @@ const TRIGGERS: { key: string; title: string; patterns: RegExp; consider: string
 ];
 
 export default function HearingLive() {
-  const [supported, setSupported] = useState<boolean | null>(null);
-  const [listening, setListening] = useState(false);
   const [finalText, setFinalText] = useState('');
-  const [interim, setInterim] = useState('');
   const [cards, setCards] = useState<Suggestion[]>([]);
-  const [errNote, setErrNote] = useState<string | null>(null);
-  const recogRef = useRef<SRecognition | null>(null);
-  const liveRef = useRef(false);
   const lastCardAt = useRef<Record<string, number>>({});
-
-  useEffect(() => {
-    const w = window as unknown as Record<string, unknown>;
-    setSupported(Boolean(w.SpeechRecognition || w.webkitSpeechRecognition));
-    return () => {
-      liveRef.current = false;
-      try {
-        recogRef.current?.stop();
-      } catch { /* already stopped */ }
-    };
-  }, []);
+  const mic = useCompanionRecognition((chunk) => {
+    setFinalText((prev) => `${prev} ${chunk}`.trim());
+    evaluate(chunk);
+  });
+  const listening = mic.status === 'listening';
 
   function evaluate(chunk: string) {
     const text = chunk.toLowerCase();
@@ -124,64 +94,6 @@ export default function HearingLive() {
         setCards((c) => [{ key: t.key, title: t.title, consider: t.consider, at: now }, ...c].slice(0, 4));
       }
     }
-  }
-
-  function start() {
-    const w = window as unknown as Record<string, unknown>;
-    const Ctor = (w.SpeechRecognition || w.webkitSpeechRecognition) as
-      | (new () => SRecognition)
-      | undefined;
-    if (!Ctor) return;
-    setErrNote(null);
-    const rec = new Ctor();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = 'en-US';
-    rec.onresult = (e) => {
-      let interimNow = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) {
-          const chunk = r[0].transcript;
-          setFinalText((prev) => `${prev} ${chunk}`.trim());
-          evaluate(chunk);
-        } else {
-          interimNow += r[0].transcript;
-        }
-      }
-      setInterim(interimNow);
-    };
-    rec.onend = () => {
-      if (liveRef.current) {
-        try {
-          rec.start();
-        } catch { /* restart race — the next onend settles it */ }
-      } else {
-        setListening(false);
-      }
-    };
-    rec.onerror = () => {
-      setErrNote('The microphone reported a problem. Check the browser’s microphone permission, then start again.');
-    };
-    recogRef.current = rec;
-    liveRef.current = true;
-    setListening(true);
-    try {
-      rec.start();
-    } catch {
-      setErrNote('Listening could not be started in this browser.');
-      setListening(false);
-      liveRef.current = false;
-    }
-  }
-
-  function stop() {
-    liveRef.current = false;
-    try {
-      recogRef.current?.stop();
-    } catch { /* already stopped */ }
-    setListening(false);
-    setInterim('');
   }
 
   return (
@@ -196,34 +108,33 @@ export default function HearingLive() {
           practice pages instead.
         </p>
         <p>
-          <strong>Nothing here is recorded or stored.</strong> The transcript exists only on
-          this screen and is gone when you close the page; the app never saves or uploads it.
+          <strong>quikForm does not save or upload the hearing transcript.</strong> The transcript
+          disappears when you leave this page. Your browser may send microphone audio to its
+          speech recognition service.
           The suggestion cards are general information drawn from hearing practice — not legal
           advice, and not a lawyer speaking for you.
         </p>
       </div>
 
-      {supported === false && (
-        <p className="warn">
-          This browser does not offer speech recognition (the Web Speech API), so the live
-          companion cannot run here. It works in Chrome on Android and desktop. The simulated
-          hearing practice works in every browser.
-        </p>
+      {mic.unavailable && (
+        <p className="warn">{mic.unavailable} You can still use <Link href="/dashboard/practice">Hearing Practice</Link>.</p>
       )}
 
       <div className="livecontrols">
-        {!listening ? (
-          <button className="btn primary big" disabled={!supported} onClick={start}>
+        {mic.status === 'idle' ? (
+          <button className="btn primary big" disabled={!mic.ready} onClick={mic.start}>
             Start listening
           </button>
         ) : (
-          <button className="btn big stopbtn" onClick={stop}>
-            ■ Stop listening
+          <button className="btn big stopbtn" onClick={mic.stop}>
+            {listening ? 'Stop listening' : 'Cancel'}
           </button>
         )}
-        {listening && <span className="livelabel">● Listening — speak normally</span>}
+        <span className="livelabel" role="status">
+          {listening ? 'Listening: speak normally' : mic.status === 'starting' ? 'Connecting to speech recognition…' : ''}
+        </span>
       </div>
-      {errNote && <p className="error">{errNote}</p>}
+      {mic.error && <p className="error" role="alert">{mic.error}</p>}
 
       {cards.length > 0 && (
         <section className="dashsection">
@@ -245,9 +156,9 @@ export default function HearingLive() {
       <section className="dashsection">
         <h2 className="srhead">What is being said</h2>
         <div className="transcript" aria-live="polite">
-          {finalText || interim ? (
+          {finalText || mic.interim ? (
             <p>
-              {finalText} <span className="interim">{interim}</span>
+              {finalText} <span className="interim">{mic.interim}</span>
             </p>
           ) : (
             <p className="fineprint">

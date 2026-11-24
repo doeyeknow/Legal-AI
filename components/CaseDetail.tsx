@@ -812,7 +812,7 @@ function CallCompanionSection({ data, reload }: { data: CaseDetailT; reload: () 
             </div>
           )}
           <button className="btn primary" onClick={() => { setRun((n) => n + 1); setOn(true); }}>
-            <Icon name="headphones" size={16} /> Turn on the call companion
+            <Icon name="headphones" size={16} /> Open call companion
           </button>
           {companionCalls > 0 && (
             <p className="fineprint">
@@ -824,8 +824,8 @@ function CallCompanionSection({ data, reload }: { data: CaseDetailT; reload: () 
       ) : (
         <>
           <div className="callcomp-bar">
-            <span className="livelabel">Call companion is on</span>
-            <button className="btn small ghost" onClick={close}>Turn off</button>
+            <span>Call companion</span>
+            <button className="btn small ghost" onClick={close}>Close</button>
           </div>
           <CallCompanion
             key={run}
