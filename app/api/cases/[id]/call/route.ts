@@ -16,7 +16,8 @@ export const runtime = 'nodejs';
 //            the call to the case; returns refs for Undo.
 //   'undo'   {ref} — take one of those back off the case.
 //   'finish' {eventId?, callWith?, transcript, saveTranscript, notes}
-//            — save the call summary to the timeline, tick the call off.
+//            — save the call summary (and transcript) to the
+//            communication log, tick the call off.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const g = await requireUser(req);
   if ('error' in g) return g.error;
@@ -54,6 +55,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         saveTranscript: body?.saveTranscript === true,
         notes,
         startedAt: cleanStr(body?.startedAt, 40),
+        callDate: cleanStr(body?.callDate, 10),
+        direction: body?.direction === 'from_court' ? 'from_court' : 'to_court',
       });
       if (!out) return notFound();
       return NextResponse.json(out);

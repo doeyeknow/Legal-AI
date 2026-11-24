@@ -5,14 +5,27 @@
 // shown to the user as a suggestion they accept or reject.
 //
 // Provider: any OpenAI-compatible Chat Completions API.
-//   AI_API_KEY (or OPENAI_API_KEY)   — required to enable the feature
+//   OPENAI_API_KEY (or AI_API_KEY)   — required to enable the feature
 //   AI_BASE_URL  default https://api.openai.com/v1
 //   AI_MODEL     default gpt-4o-mini
 // Without a key the feature reports itself as unavailable (503)
 // and the interview simply skips the offer.
 
+/** The model API key: OPENAI_API_KEY, or AI_API_KEY for another
+ *  OpenAI-compatible provider. Stray spaces, quotes, and a pasted
+ *  "Bearer " prefix are tolerated. */
+export function aiKey(): { key: string; setting: string } | null {
+  for (const name of ['OPENAI_API_KEY', 'AI_API_KEY', 'openai_api_key']) {
+    const raw = process.env[name];
+    if (!raw) continue;
+    const key = raw.trim().replace(/^['"]|['"]$/g, '').replace(/^Bearer\s+/i, '').trim();
+    if (key) return { key, setting: name };
+  }
+  return null;
+}
+
 export function aiConfigured(): boolean {
-  return Boolean(process.env.AI_API_KEY || process.env.OPENAI_API_KEY);
+  return aiKey() !== null;
 }
 
 export interface RewriteItem { key: string; label: string; text: string }
@@ -47,7 +60,7 @@ export async function rewriteProfessionally(
   items: RewriteItem[],
   opts: { purpose: 'statements' | 'email'; context?: string },
 ): Promise<{ ok: true; items: { key: string; text: string }[] } | { ok: false; status: number; message: string }> {
-  const apiKey = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
+  const apiKey = aiKey()?.key;
   if (!apiKey) {
     return { ok: false, status: 503, message: 'The AI rewrite isn’t set up on this site yet.' };
   }
@@ -110,7 +123,7 @@ export async function chatJson<T = unknown>(
   user: string,
   opts: { timeoutMs?: number; temperature?: number } = {},
 ): Promise<T | null> {
-  const apiKey = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
+  const apiKey = aiKey()?.key;
   if (!apiKey) return null;
   const base = (process.env.AI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
   const model = process.env.AI_MODEL || 'gpt-4o-mini';

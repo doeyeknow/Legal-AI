@@ -4,13 +4,16 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Icon } from './icons';
 import { refreshCalendar } from '@/lib/calendar-store';
+import type { CommEntry } from '@/lib/dashboard-types';
 
 // The hearing companion in call mode: it listens (through the
 // browser's speech recognition) while the person is on a phone call
 // about their case, suggests what to say next, and adds the details
 // it hears — dates, deadlines, the case number, names — to the case,
 // each with an Undo. At the end it saves a short summary of the call
-// to the case timeline. The transcript is only saved if asked.
+// to the case's communication log, with the transcript (which the
+// person can switch off). It runs full-page from the calendar, or
+// embedded in the case view (embedded=true).
 
 interface SRResult { isFinal: boolean; 0: { transcript: string } }
 interface SREvent { resultIndex: number; results: { length: number; [i: number]: SRResult } }
@@ -72,7 +75,24 @@ function tzOffset(): string {
   return `${sign}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}`;
 }
 
-export default function CallCompanion({ caseId, eventId }: { caseId: string; eventId: string | null }) {
+export default function CallCompanion({
+  caseId,
+  eventId,
+  embedded = false,
+  onChanged,
+  onSaved,
+  onClose,
+}: {
+  caseId: string;
+  eventId: string | null;
+  /** Shown inside the case view: no case header, a who-and-direction row. */
+  embedded?: boolean;
+  /** Something was added to or removed from the case. */
+  onChanged?: () => void;
+  /** The call was saved to the communication log. */
+  onSaved?: (comm: CommEntry | null) => void;
+  onClose?: () => void;
+}) {
   const [event, setEvent] = useState<CallEvent | null>(null);
   const [caseTitle, setCaseTitle] = useState('');
   const [supported, setSupported] = useState<boolean | null>(null);
@@ -83,7 +103,9 @@ export default function CallCompanion({ caseId, eventId }: { caseId: string; eve
   const [added, setAdded] = useState<Added[]>([]);
   const [errNote, setErrNote] = useState<string | null>(null);
   const [note, setNote] = useState('');
-  const [saveTranscript, setSaveTranscript] = useState(false);
+  const [saveTranscript, setSaveTranscript] = useState(true);
+  const [whoInput, setWhoInput] = useState('');
+  const [direction, setDirection] = useState<'to_court' | 'from_court'>('to_court');
   const [finishing, setFinishing] = useState(false);
   const [finished, setFinished] = useState<{ summary: string } | null>(null);
   const [aiOn, setAiOn] = useState<boolean | null>(null);
@@ -97,7 +119,7 @@ export default function CallCompanion({ caseId, eventId }: { caseId: string; eve
   const startedAt = useRef<string>(new Date().toISOString());
   const busyRef = useRef(false);
 
-  const callWith = event?.people || (event?.title || '').replace(/^Call\s+/i, '').replace(/\s+at\s+[\d()+\s.-]+(ext\.\s*\d+)?$/i, '');
+  const callWith = whoInput.trim() || event?.people || (event?.title || '').replace(/^Call\s+/i, '').replace(/\s+at\s+[\d()+\s.-]+(ext\.\s*\d+)?$/i, '');
 
   useEffect(() => {
     const w = window as unknown as Record<string, unknown>;
@@ -166,6 +188,7 @@ export default function CallCompanion({ caseId, eventId }: { caseId: string; eve
         ...list,
       ]);
       void refreshCalendar();
+      if (refs.length) onChanged?.();
     } catch { /* the next pass retries new facts only */ }
   }
 
@@ -267,6 +290,7 @@ export default function CallCompanion({ caseId, eventId }: { caseId: string; eve
     }
     setAdded((list) => list.map((x) => (x.key === a.key ? { ...x, undone: true } : x)));
     void refreshCalendar();
+    onChanged?.();
   }
 
   async function addNote() {
@@ -291,12 +315,15 @@ export default function CallCompanion({ caseId, eventId }: { caseId: string; eve
           saveTranscript,
           notes: added.filter((a) => !a.undone).map((a) => `${a.label}: ${a.valueText}`),
           startedAt: startedAt.current,
+          callDate: todayLocal(),
+          direction,
         }),
       });
       const b = await r.json().catch(() => null);
       if (r.ok && b) {
         setFinished({ summary: b.summary || '' });
         void refreshCalendar();
+        onSaved?.(b.comm || null);
       } else {
         setErrNote('The call summary could not be saved. Try again in a moment.');
       }
@@ -309,7 +336,8 @@ export default function CallCompanion({ caseId, eventId }: { caseId: string; eve
   const liveAdded = added.filter((a) => !a.undone);
 
   return (
-    <div className="callcomp">
+    <div className={`callcomp${embedded ? ' embedded' : ''}`}>
+      {(!embedded || event) && (
       <section className="callhead">
         <span className="callhead-icon"><Icon name="phone" size={22} /></span>
         <div className="callhead-texts">
@@ -327,10 +355,31 @@ export default function CallCompanion({ caseId, eventId }: { caseId: string; eve
           </a>
         )}
       </section>
+      )}
       {event?.details && <p className="fineprint prewrap callreq">{event.details}</p>}
 
+      {!finished && (
+        <div className="callwho formgrid">
+          <div className="field">
+            <label htmlFor="cc-who">Who is the call with?</label>
+            <input
+              id="cc-who" value={whoInput} maxLength={200}
+              placeholder={event?.people || 'e.g. Court clerk, opposing counsel'}
+              onChange={(e) => setWhoInput(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="cc-dir">Who called</label>
+            <select id="cc-dir" value={direction} onChange={(e) => setDirection(e.target.value as 'to_court' | 'from_court')}>
+              <option value="to_court">I called them</option>
+              <option value="from_court">They called me</option>
+            </select>
+          </div>
+        </div>
+      )}
+
       <div className="warn livewarn">
-        <h2>Before you start</h2>
+        <h2>{embedded ? 'Before you turn it on' : 'Before you start'}</h2>
         <ul>
           <li>
             <strong>Tell the other person.</strong> In some states everyone on a call must agree
@@ -439,23 +488,31 @@ export default function CallCompanion({ caseId, eventId }: { caseId: string; eve
           <label className="toggleline">
             <input type="checkbox" checked={saveTranscript} onChange={(e) => setSaveTranscript(e.target.checked)} />
             <span>
-              <strong>Also save the transcript to the case</strong>
-              <span className="fineprint block">Off by default — only the summary is saved.</span>
+              <strong>Save the transcript in the communication log</strong>
+              <span className="fineprint block">Turn this off to keep only the summary.</span>
             </span>
           </label>
           <button className="btn primary" disabled={finishing} onClick={finish}>
-            <Icon name="check" size={16} /> {finishing ? 'Saving…' : 'End call and save summary'}
+            <Icon name="check" size={16} /> {finishing ? 'Saving…' : 'End call and save to the log'}
           </button>
         </section>
       ) : (
         <section className="dashsection savednote">
-          <h2>Call saved to the case</h2>
+          <h2>Call saved to the communication log</h2>
           <p className="prewrap">{finished.summary}</p>
           <p className="fineprint">
-            {liveAdded.length} detail{liveAdded.length === 1 ? '' : 's'} added.{' '}
-            <Link href={`/dashboard/cases/${caseId}`}>Open the case</Link> ·{' '}
+            {liveAdded.length} detail{liveAdded.length === 1 ? '' : 's'} added to this case
+            {saveTranscript && finalText ? ', transcript saved' : ''}.{' '}
+            {embedded ? (
+              <a href="#comms">See the communication log</a>
+            ) : (
+              <Link href={`/dashboard/cases/${caseId}#comms`}>Open the case</Link>
+            )}{' '}·{' '}
             <Link href="/dashboard/calendar">Calendar</Link>
           </p>
+          {embedded && onClose && (
+            <button type="button" className="btn" onClick={onClose}>Done</button>
+          )}
         </section>
       )}
     </div>

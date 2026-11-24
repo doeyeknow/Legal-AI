@@ -9,6 +9,7 @@ import ReplyBadge from './ReplyBadge';
 import { caseReplyState, localToday, replyMarks } from '@/lib/reply-state';
 import CommDraft from './CommDraft';
 import CaseTimeline from './CaseTimeline';
+import CallCompanion from './CallCompanion';
 import type {
   Appearance,
   CaseDetail as CaseDetailT,
@@ -16,7 +17,7 @@ import type {
   Deadline,
   RemoteStatus,
 } from '@/lib/dashboard-types';
-import { APPEARANCE_PLATFORMS, CASE_STATUSES, COMM_METHODS } from '@/lib/dashboard-types';
+import { APPEARANCE_PLATFORMS, CASE_STATUSES, COMM_METHODS, COMPANION_STATUS, TRANSCRIPT_MARK } from '@/lib/dashboard-types';
 import { DEADLINE_TYPES, deadlineType } from '@/lib/comm-templates';
 import { PORTALS, portalByKey } from '@/lib/portals';
 import { getMotion } from '@/lib/motions/match';
@@ -147,6 +148,7 @@ function CaseSections({
       <DocumentsSection data={data} reload={reload} />
       <DeadlinesSection data={data} setData={setData} />
       <AppearanceSection data={data} setData={setData} />
+      <CallCompanionSection data={data} reload={reload} />
       <CommsSection data={data} setData={setData} />
       <CourtMailSection data={data} />
       <WatchSection data={data} setData={setData} reload={reload} />
@@ -684,7 +686,7 @@ function CommsSection({
                   </span>
                 )}
                 {c.status && <span className="fineprint block">{c.status}</span>}
-                {c.body && <span className="commbody">{c.body}</span>}
+                {c.body && <CommBody body={c.body} />}
               </span>
             </li>
           ))}
@@ -742,6 +744,99 @@ function CommsSection({
             <button className="btn ghost" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
           </div>
         </Modal>
+      )}
+    </section>
+  );
+}
+
+/** A comm-log body; a call transcript saved by the companion is
+ *  folded away behind a toggle so the summary stays readable. */
+function CommBody({ body }: { body: string }) {
+  const at = body.indexOf(TRANSCRIPT_MARK);
+  if (at < 0) return <span className="commbody">{body}</span>;
+  const summary = body.slice(0, at);
+  const transcript = body.slice(at + TRANSCRIPT_MARK.length);
+  return (
+    <>
+      <span className="commbody">{summary}</span>
+      <details className="commtranscript">
+        <summary>Show call transcript</summary>
+        <span className="fineprint block">As heard by the companion — it may contain errors.</span>
+        <span className="commbody">{transcript}</span>
+      </details>
+    </>
+  );
+}
+
+/** Turn the hearing companion on for a phone call about this case.
+ *  What it hears goes straight into this case, and the call summary
+ *  and transcript land in the communication log below. */
+function CallCompanionSection({ data, reload }: { data: CaseDetailT; reload: () => void }) {
+  const [on, setOn] = useState(false);
+  const [callId, setCallId] = useState<string>('');
+  const [run, setRun] = useState(0);
+  const openCalls = data.events.filter((e) => e.kind === 'call' && !e.done);
+  const companionCalls = data.comms.filter((c) => c.status === COMPANION_STATUS).length;
+
+  function close() {
+    setOn(false);
+    setCallId('');
+    reload();
+  }
+
+  return (
+    <section className="dashsection callcompsection" id="call-companion">
+      <div className="callcomp-top">
+        <span className="callhead-icon"><Icon name="headphones" size={20} /></span>
+        <div className="callcomp-top-text">
+          <h2>Call companion</h2>
+          <p className="fineprint">
+            On a phone call about this case? Turn the companion on and it listens along,
+            suggests what to say, and adds the dates, deadlines, and details it hears to this
+            case. When you end the call, the summary and transcript are saved to the
+            communication log.
+          </p>
+        </div>
+      </div>
+      {!on ? (
+        <div className="callcomp-start">
+          {openCalls.length > 0 && (
+            <div className="field inlinefield">
+              <label htmlFor="cc-call">Which call is this?</label>
+              <select id="cc-call" value={callId} onChange={(e) => setCallId(e.target.value)}>
+                <option value="">A new call</option>
+                {openCalls.map((e) => (
+                  <option key={e.id} value={e.id}>{e.title}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <button className="btn primary" onClick={() => { setRun((n) => n + 1); setOn(true); }}>
+            <Icon name="headphones" size={16} /> Turn on the call companion
+          </button>
+          {companionCalls > 0 && (
+            <p className="fineprint">
+              {companionCalls} call{companionCalls === 1 ? '' : 's'} logged by the companion —{' '}
+              <a href="#comms">see the communication log</a>.
+            </p>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="callcomp-bar">
+            <span className="livelabel">Call companion is on</span>
+            <button className="btn small ghost" onClick={close}>Turn off</button>
+          </div>
+          <CallCompanion
+            key={run}
+            caseId={data.id}
+            eventId={callId || null}
+            embedded
+            onChanged={reload}
+            onSaved={() => reload()}
+            onClose={close}
+          />
+        </>
       )}
     </section>
   );

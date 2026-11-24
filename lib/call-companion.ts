@@ -9,6 +9,7 @@
 import { query } from './db';
 import {
   addCaseEvent,
+  addComm,
   addDeadline,
   deleteCaseEvent,
   deleteDeadline,
@@ -19,6 +20,7 @@ import {
   upsertAppearance,
 } from './cases';
 import { chatJson } from './ai';
+import { COMPANION_STATUS, TRANSCRIPT_MARK } from './dashboard-types';
 import { extractFromMessage, longDate, longTime } from './inbox-parse';
 
 export interface CallFact {
@@ -263,8 +265,9 @@ export async function undoCallRef(userId: string, caseId: string, ref: AppliedRe
   return false;
 }
 
-/** End of the call: a summary on the case timeline (plus the
- *  transcript only if asked), and the call ticked off. */
+/** End of the call: the summary (and the transcript, unless the user
+ *  turned that off) goes into the case's communication log, which
+ *  also shows on the case timeline, and the call is ticked off. */
 export async function finishCall(
   userId: string,
   caseId: string,
@@ -275,8 +278,10 @@ export async function finishCall(
     saveTranscript: boolean;
     notes: string[];
     startedAt?: string;
+    callDate?: string;
+    direction?: 'to_court' | 'from_court';
   },
-): Promise<{ eventId: string; summary: string } | null> {
+): Promise<{ commId: string; summary: string; comm: Awaited<ReturnType<typeof addComm>> } | null> {
   const lite = await getOwnedCaseLite(userId, caseId);
   if (!lite) return null;
   let summary = '';
@@ -293,26 +298,26 @@ export async function finishCall(
       ? `Details noted on the call:\n${input.notes.map((n) => `- ${n}`).join('\n')}`
       : 'Phone call — no details were picked up automatically.';
   }
-  let details = summary;
+  let body = summary;
   if (input.saveTranscript && input.transcript.trim()) {
-    details += `\n\nTranscript (as heard by the companion, may contain errors):\n${input.transcript.slice(0, 6000)}`;
+    body += `${TRANSCRIPT_MARK}${input.transcript.trim().slice(0, 20000)}`;
   }
   const started = input.startedAt ? new Date(input.startedAt) : new Date();
-  const ev = await addCaseEvent(userId, caseId, {
-    kind: 'communication',
-    title: `Phone call${input.callWith ? ` with ${input.callWith}` : ''}`.slice(0, 200),
-    details: details.slice(0, 8000),
-    occurredOn: (Number.isNaN(started.getTime()) ? new Date() : started).toISOString().slice(0, 10),
-    occurredTime: null,
-    location: '',
-    people: (input.callWith || '').slice(0, 500),
-    source: 'call',
-    sourceRef: input.eventId || null,
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(input.callDate || '')
+    ? input.callDate!
+    : (Number.isNaN(started.getTime()) ? new Date() : started).toISOString().slice(0, 10);
+  const comm = await addComm(userId, caseId, {
+    direction: input.direction === 'from_court' ? 'from_court' : 'to_court',
+    method: 'Phone',
+    subject: `Phone call${input.callWith ? ` with ${input.callWith}` : ''}`.slice(0, 200),
+    body,
+    sentAt: date,
+    responseDeadline: null,
+    status: COMPANION_STATUS,
   });
   if (input.eventId) {
     const call = await getOwnedEvent(userId, input.eventId);
     if (call && call.caseId === caseId) await setCaseEventDone(userId, input.eventId, true);
   }
-  return ev ? { eventId: ev.id, summary } : null;
+  return comm ? { commId: comm.id, summary, comm } : null;
 }
-

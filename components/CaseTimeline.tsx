@@ -13,7 +13,7 @@ import Link from 'next/link';
 import Modal from './Modal';
 import { Icon, type IconName } from './icons';
 import type { CaseDetail as CaseDetailT, CaseEvent } from '@/lib/dashboard-types';
-import { CASE_EVENT_KINDS } from '@/lib/dashboard-types';
+import { CASE_EVENT_KINDS, COMPANION_STATUS, TRANSCRIPT_MARK } from '@/lib/dashboard-types';
 import { deadlineType } from '@/lib/comm-templates';
 import { localToday } from '@/lib/reply-state';
 
@@ -148,11 +148,13 @@ function buildEntries(data: CaseDetailT): Entry[] {
   }
   for (const c of data.comms) {
     const out_ = c.direction === 'to_court';
+    const isCall = c.method === 'Phone';
+    const tAt = c.body.indexOf(TRANSCRIPT_MARK);
     out.push({
       id: `cm-${c.id}`, source: 'comm', kind: out_ ? 'comm_out' : 'comm_in', date: c.sentAt, time: null,
-      title: `${out_ ? 'Sent' : 'Received'}: ${c.subject || c.method || 'Communication'}`,
-      details: c.body,
-      meta: [c.method, c.status].filter(Boolean),
+      title: isCall ? (c.subject || 'Phone call') : `${out_ ? 'Sent' : 'Received'}: ${c.subject || c.method || 'Communication'}`,
+      details: tAt >= 0 ? c.body.slice(0, tAt) : c.body,
+      meta: [c.method, c.status, tAt >= 0 && c.status === COMPANION_STATUS ? 'Transcript in the communication log' : ''].filter(Boolean),
       tag: out_ ? 'To the court' : 'From the court', href: `${base}#comms`,
     });
     if (c.responseDeadline) {

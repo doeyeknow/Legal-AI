@@ -287,3 +287,9 @@ export interface CalendarItem {
    *  from it in the user's own time zone. */
   at: string | null;
 }
+
+/** Marks where the call summary ends and the transcript begins in a
+ *  communication-log entry the companion saved. The case page uses it
+ *  to fold the transcript away behind a "Show transcript" toggle. */
+export const TRANSCRIPT_MARK = '\n\n--- Transcript (as heard by the companion, may contain errors) ---\n';
+export const COMPANION_STATUS = 'Logged by the hearing companion';

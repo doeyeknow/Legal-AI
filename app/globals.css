@@ -1965,3 +1965,19 @@ main:has(.homepage) { max-width: none; padding: 0; scroll-behavior: smooth; }
 .callnote-row .btn { margin: 0; flex: none; }
 .callend { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
 .callend .btn { margin: 0; }
+
+/* Call companion inside the case view */
+.callcompsection .callcomp-top { display: flex; gap: 14px; align-items: flex-start; }
+.callcompsection .callcomp-top h2 { margin: 0 0 4px; }
+.callcompsection .callcomp-top-text { flex: 1; min-width: 0; }
+.callcompsection .callcomp-top .callhead-icon { flex: none; }
+.callcomp-start { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; margin-top: 12px; }
+.callcomp-start .field { margin: 0; }
+.callcomp-start .fineprint { flex-basis: 100%; margin: 0; }
+.callcomp-bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 12px 0 4px; flex-wrap: wrap; }
+.callcomp.embedded { margin-top: 8px; }
+.callcomp.embedded .dashsection { padding-left: 0; padding-right: 0; background: none; border: 0; box-shadow: none; }
+.callwho { margin: 10px 0 4px; }
+.commtranscript { margin-top: 6px; }
+.commtranscript summary { cursor: pointer; color: var(--gold, #D4A72C); font-size: 14px; }
+.commtranscript .commbody { max-height: 320px; overflow: auto; padding: 8px 10px; border-radius: 8px; background: rgba(255,255,255,0.03); }
