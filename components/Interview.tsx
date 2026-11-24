@@ -17,6 +17,8 @@ import DialPad from './DialPad';
 import { SpeechPlayer } from '@/lib/speech';
 import type { CourtRecord } from '@/lib/courts/index';
 import { isCriminalAdversarial, statePartyName } from '@/lib/state-party';
+import DefenseCheck from './DefenseCheck';
+import { looksCriminal } from '@/lib/defenses';
 
 /** One AI suggestion on the review page: the user's own words, the
  *  suggested professional rewording (editable), and their choice. */
@@ -79,7 +81,7 @@ interface FilingInfo {
 
 type Stage =
   | 'boot' | 'gate' | 'who' | 'subject' | 'situation' | 'confirm' | 'pick' | 'fields' | 'feew-choice'
-  | 'feew-fields' | 'review' | 'signature' | 'pay' | 'generating' | 'done' | 'casefacts';
+  | 'feew-fields' | 'review' | 'signature' | 'pay' | 'generating' | 'done' | 'casefacts' | 'defense';
 
 /** The person the motion is FOR: the profile-shaped basic info plus
  *  the email that goes on the document. For "for me" this starts as
@@ -114,6 +116,8 @@ export default function Interview() {
   const [input, setInput] = useState('');
   const [motion, setMotion] = useState<MotionDef | null>(null);
   const [candidates, setCandidates] = useState<MotionDef[]>([]);
+  /** The situation text, kept for the criminal defense check. */
+  const [situationText, setSituationText] = useState('');
   const [answers, setAnswers] = useState<Answers>({});
   const [queue, setQueue] = useState<MotionField[]>([]);
   const [qIdx, setQIdx] = useState(0);
@@ -667,7 +671,19 @@ export default function Interview() {
       say('bot', `Honest note: ${best.proSe}`);
       if (best.warning) say('bot', best.warning);
       setMotion(best);
-      setStage('confirm');
+      setSituationText(t);
+      // Someone facing a pending criminal charge: look for ways to
+      // get it dropped before drafting anything.
+      if (looksCriminal(t)) {
+        say('bot', 'Since this is a criminal charge, a few yes / no questions first could turn up a way to get it dismissed.');
+        setStage('defense');
+      } else {
+        setStage('confirm');
+      }
+    } else if (looksCriminal(t)) {
+      setSituationText(t);
+      say('bot', 'Since this is a criminal charge, a few yes / no questions first could turn up a way to get it dismissed.');
+      setStage('defense');
     } else {
       say('bot', 'I could not match that confidently. No problem — pick the closest fit from the full library below, or try describing it a different way.');
       setStage('pick');
@@ -1580,6 +1596,12 @@ export default function Interview() {
         badges.push({ label: `Closer: ${c.name}`, action: () => chooseMotion(c) });
       }
     }
+    if (motion.category === 'Criminal & Post-Conviction' && looksCriminal(situationText || motion.name)) {
+      badges.push({
+        label: 'Check for ways to get the charges dropped',
+        action: () => { say('user', 'Check for ways to get the charges dropped'); setStage('defense'); },
+      });
+    }
     badges.push({
       label: 'Show me the full library',
       action: () => { say('user', 'Show me the full list'); setStage('pick'); },
@@ -1683,6 +1705,8 @@ export default function Interview() {
   let progressLabel: string | null = null;
   if (stage === 'casefacts') {
     progressLabel = 'Facts from your court mail';
+  } else if (stage === 'defense') {
+    progressLabel = 'Ways to get charges dropped';
   } else if (stage === 'fields' || stage === 'feew-fields') {
     progressLabel = `Question ${qIdx + 1} of ${qTotal}`;
   } else if (stage === 'review') {
@@ -1822,7 +1846,8 @@ export default function Interview() {
   // line as the page heading and anything before it as intro copy.
   const cardStage =
     stage === 'gate' || stage === 'casefacts' || stage === 'subject' || stage === 'confirm' ||
-    stage === 'pick' || stage === 'review' || stage === 'signature' || stage === 'pay' || stage === 'done';
+    stage === 'pick' || stage === 'review' || stage === 'signature' || stage === 'pay' || stage === 'done' ||
+    stage === 'defense';
   let pageHeading: string | null = null;
   let pageIntro: string[] = [];
   if (liveQuestion) {
@@ -1831,8 +1856,8 @@ export default function Interview() {
   } else if (stage === 'boot' || stage === 'generating') {
     pageHeading = stage === 'generating' ? 'Preparing your document…' : null;
     pageIntro = stage === 'generating' ? turnTexts.slice(-1) : [];
-  } else if (stage === 'confirm') {
-    // The motion card already says it; no need to repeat.
+  } else if (stage === 'confirm' || stage === 'defense') {
+    // The motion card / defense check already says it.
     pageIntro = [];
   } else if (cardStage) {
     pageIntro = turnTexts.filter((t) => t !== signPrompt());
@@ -2389,6 +2414,21 @@ export default function Interview() {
                 Use this information
               </button>
             </div>
+          )}
+
+          {stage === 'defense' && (
+            <DefenseCheck
+              situation={situationText}
+              continueLabel={motion ? `Continue to ${motion.name}` : 'Pick a document from the library'}
+              onContinue={() => {
+                if (motion) { say('user', 'Continue'); setStage('confirm'); }
+                else setStage('pick');
+              }}
+              onStartMotion={(id) => {
+                const m = getMotion(id);
+                if (m) { say('user', `Start the ${m.name}`); chooseMotion(m); }
+              }}
+            />
           )}
 
           {stage === 'confirm' && motion && (

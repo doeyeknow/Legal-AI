@@ -51,6 +51,7 @@ const TOOLS: SideItem[] = [
   { href: '/dashboard/hearing-live', icon: 'headphones', label: 'Hearing Companion', match: (p) => p.startsWith('/dashboard/hearing-live') },
   { href: '/dashboard/warrants', icon: 'search', label: 'Warrants & Lookup', match: (p) => p.startsWith('/dashboard/warrants') },
   { href: '/dashboard/charges', icon: 'list', label: 'Charge Library', match: (p) => p.startsWith('/dashboard/charges') },
+  { href: '/defenses', icon: 'shield', label: 'Defense Guide', match: (p) => p.startsWith('/defenses') },
   { href: '/account', icon: 'person', label: 'Account', match: (p) => p.startsWith('/account') },
 ];
 
@@ -65,6 +66,7 @@ const TITLES: [string, string][] = [
   ['/dashboard/charges', 'Charge Library'],
   ['/dashboard', 'Cases'],
   ['/library', 'Motion Library'],
+  ['/defenses', 'Defense Guide'],
   ['/account', 'Account'],
 ];
 
