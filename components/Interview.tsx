@@ -935,9 +935,12 @@ export default function Interview() {
       retryTimerRef.current = null;
     }
     const rec = recogRef.current;
+    const session = recogSessionRef.current;
+    if (session && suppressEnd) session.suppressEnd = true;
     if (rec) {
-      if (recogSessionRef.current) recogSessionRef.current.suppressEnd = suppressEnd;
+      try { rec.onresult = null; rec.onerror = null; rec.onend = null; rec.onstart = null; } catch { /* */ }
       try { rec.stop(); } catch { /* already stopped */ }
+      recogRef.current = null;
     }
   }
 
@@ -995,30 +998,30 @@ export default function Interview() {
     }
     if (listeningRef.current) return true;
 
-    // Reuse one SpeechRecognition instance. Recreating on every tap
-    // makes some Chrome builds end the session immediately (mic blink).
-    let rec = recogRef.current as any;
-    if (!rec) {
-      rec = new SR();
-      recogRef.current = rec;
-    } else {
-      try { rec.onresult = null; rec.onerror = null; rec.onend = null; rec.onstart = null; } catch { /* */ }
-      try { rec.stop(); } catch { /* */ }
+    // Fully detach any prior instance. Reusing the same object and
+    // calling stop()+start() in one turn makes Chrome fire "aborted"
+    // on the new session (mic blinks: "Listening was interrupted").
+    const prev = recogRef.current;
+    if (prev) {
+      try { prev.onresult = null; prev.onerror = null; prev.onend = null; prev.onstart = null; } catch { /* */ }
+      try { prev.stop(); } catch { /* */ }
+      recogRef.current = null;
     }
 
+    const rec = new SR();
     const session = {
       auto,
       gotResult: false,
       suppressEnd: false,
       error: '' as string,
       startedAt: Date.now(),
+      retryOnAbort: !auto, // one automatic retry for manual taps only
     };
     recogSessionRef.current = session;
+    recogRef.current = rec;
     rec.lang = 'en-US';
     rec.interimResults = true;
-    // continuous true keeps the session open; with false, some Chrome builds
-    // end in milliseconds when the speech service hiccups (looks like a blink).
-    rec.continuous = true;
+    rec.continuous = false;
     try { rec.maxAlternatives = 1; } catch { /* */ }
 
     rec.onstart = () => {
@@ -1045,21 +1048,42 @@ export default function Interview() {
         session.gotResult = true;
         emptyCyclesRef.current = 0;
         setInput('');
-        // One final answer per session — stop so we don't dictate into the next question.
         session.suppressEnd = true;
+        try { rec.onresult = null; rec.onerror = null; rec.onend = null; rec.onstart = null; } catch { /* */ }
         try { rec.stop(); } catch { /* */ }
+        if (recogRef.current === rec) recogRef.current = null;
+        setListening(false);
+        listeningRef.current = false;
+        setSpeechStatus(null);
         fnRef.current.submitInput(finalText);
       }
     };
 
     rec.onend = () => {
       if (recogSessionRef.current !== session) return;
+      if (recogRef.current === rec) recogRef.current = null;
       const elapsed = Date.now() - session.startedAt;
       setListening(false);
       listeningRef.current = false;
 
-      // Manual listen that died with no transcript: always explain why.
-      // This is the "mic blinks, no error" path (aborted / instant onend / no-speech).
+      // Chrome often aborts a brand-new session if a prior stop() is still
+      // settling. Retry once for manual taps before showing an error.
+      if (
+        !session.auto &&
+        !session.gotResult &&
+        !session.suppressEnd &&
+        session.error === 'aborted' &&
+        session.retryOnAbort &&
+        elapsed < 1500
+      ) {
+        session.retryOnAbort = false;
+        setSpeechStatus('Retrying microphone…');
+        setTimeout(() => {
+          if (!listeningRef.current) fnRef.current.startRecognition(false);
+        }, 120);
+        return;
+      }
+
       if (!session.auto && !session.gotResult && !session.suppressEnd) {
         if (session.error === 'network') {
           reportSpeech(
@@ -1073,7 +1097,7 @@ export default function Interview() {
           reportSpeech(
             'Listening was interrupted right away. Tap the mic once more, or type your answer.',
           );
-        } else if (session.error === 'no-speech' || elapsed > 1200) {
+        } else if (session.error === 'no-speech') {
           reportSpeech('No speech detected. Tap the mic and speak, or type your answer.');
         } else if (session.error) {
           reportSpeech(`Voice typing stopped (${session.error}). Typing works just the same.`);
@@ -1119,6 +1143,7 @@ export default function Interview() {
     } catch (err: any) {
       setListening(false);
       listeningRef.current = false;
+      if (recogRef.current === rec) recogRef.current = null;
       const msg = `Listening could not be started (${String(err?.message || err || 'error')}) — typing works just the same.`;
       if (!auto) reportSpeech(msg);
       else {
@@ -1236,11 +1261,20 @@ export default function Interview() {
     setSpeechStatus('Starting microphone…');
     listenPausedRef.current = false;
     emptyCyclesRef.current = 0;
+    // Cancel any pending auto-listen so it cannot stop/start-race this tap.
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
     // Barge-in: tapping Speak while the assistant is talking stops
     // the speech first, so the mic never hears the assistant.
     if (voiceOnRef.current && speakingRef.current) playerRef.current?.stop();
+    // Drop any in-flight recognition before starting a clean session.
+    stopRecognition(true);
     const ok = await ensureMicAccess();
     if (!ok) return;
+    // Brief yield so Chrome finishes detaching the previous session.
+    await new Promise((r) => setTimeout(r, 150));
     startRecognition(false);
   }
 
