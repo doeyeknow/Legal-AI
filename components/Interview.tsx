@@ -80,7 +80,7 @@ interface FilingInfo {
 }
 
 type Stage =
-  | 'boot' | 'gate' | 'who' | 'subject' | 'situation' | 'confirm' | 'pick' | 'fields' | 'feew-choice'
+  | 'boot' | 'mode' | 'gate' | 'who' | 'subject' | 'situation' | 'confirm' | 'pick' | 'fields' | 'feew-choice'
   | 'feew-fields' | 'review' | 'signature' | 'pay' | 'generating' | 'done' | 'casefacts' | 'defense';
 
 /** The person the motion is FOR: the profile-shaped basic info plus
@@ -108,11 +108,9 @@ const IFP_FIELDS: MotionField[] = [
 const STORE_KEY = 'legal-interview-v1';
 
 export default function Interview() {
-  const [msgs, setMsgs] = useState<Msg[]>([
-    { from: 'bot', text: 'Hey there! How can I help?' }
-    
-  ]);
+  const [msgs, setMsgs] = useState<Msg[]>([]);
   const [stage, setStage] = useState<Stage>('boot');
+  const afterModeRef = useRef<(() => void) | null>(null);
   const [input, setInput] = useState('');
   const [motion, setMotion] = useState<MotionDef | null>(null);
   const [candidates, setCandidates] = useState<MotionDef[]>([]);
@@ -178,6 +176,7 @@ export default function Interview() {
   const announcedStageRef = useRef('');
   const recogRef = useRef<any>(null); // unused (legacy Web Speech); kept to minimize diff noise
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const micAttemptRef = useRef(0);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const mediaChunksRef = useRef<BlobPart[]>([]);
   const recordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -286,6 +285,7 @@ export default function Interview() {
         }
       } catch { /* fall through to a fresh interview */ }
       if (returning === 'success') say('bot', 'This browser no longer has the interview answers used at checkout. If you were charged, contact us with your receipt before paying again.');
+      else say('bot', 'Tell me what is going on, in your own words.');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -313,10 +313,11 @@ export default function Interview() {
         }
         if (res.status === 503) {
           setAcct('off');
-          beginFresh();
+          offerMode(beginFresh);
           return;
         }
         const data = await res.json().catch(() => ({}));
+        if (!live) return;
         if (data.user) {
           const u = data.user;
           setProfile({
@@ -341,21 +342,25 @@ export default function Interview() {
           // one of the user's cases and a motion was picked, offer
           // the case's confirmed facts first (its own step screen).
           if (caseIdRef.current && preselectRef.current && (await tryLoadCaseFacts())) {
-            say('bot', `Welcome back${u.fullName ? `, ${String(u.fullName).split(' ')[0]}` : ''}. Before the questions: your court mail for this case gave us some facts you already confirmed. Use the ones that belong in this document — anything you leave off is simply asked about as usual.`);
-            setStage('casefacts');
+            offerMode(() => {
+              say('bot', `Welcome back${u.fullName ? `, ${String(u.fullName).split(' ')[0]}` : ''}. Before the questions: your court mail for this case gave us some facts you already confirmed. Use the ones that belong in this document — anything you leave off is simply asked about as usual.`);
+              setStage('casefacts');
+            });
             return;
           }
-          say('bot', `Welcome back${u.fullName ? `, ${String(u.fullName).split(' ')[0]}` : ''}. First question: is this motion for you, or for someone else?`);
-          setStage('who');
+          offerMode(() => {
+            say('bot', `Welcome back${u.fullName ? `, ${String(u.fullName).split(' ')[0]}` : ''}. Is this motion for you, or for someone else?`);
+            setStage('who');
+          });
         } else {
           setAcct('guest');
-          setStage('gate');
+          offerMode(() => setStage('gate'));
         }
       })
       .catch(() => {
         if (!live) return;
         setAcct('off');
-        if (!params.get('payment')) beginFresh();
+        if (!params.get('payment')) offerMode(beginFresh);
       });
     return () => {
       live = false;
@@ -400,18 +405,9 @@ export default function Interview() {
   // Stop any playback / listening when the interview unmounts.
   useEffect(() => {
     return () => {
+      voiceOnRef.current = false;
       playerRef.current?.stop();
-      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
-      if (recordTimerRef.current) clearTimeout(recordTimerRef.current);
-      if (vadTimerRef.current) clearInterval(vadTimerRef.current);
-      try {
-        const rec = mediaRecorderRef.current;
-        if (rec && rec.state !== 'inactive') rec.stop();
-      } catch { /* */ }
-      try {
-        mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-      } catch { /* */ }
-      try { void audioCtxRef.current?.close(); } catch { /* */ }
+      stopRecognition(true);
     };
   }, []);
 
@@ -548,6 +544,24 @@ export default function Interview() {
     return g;
   }, []);
 
+  function offerMode(next: () => void) {
+    afterModeRef.current = next;
+    setStage('mode');
+  }
+
+  function selectMode(useVoice: boolean) {
+    const next = afterModeRef.current;
+    if (!next) return;
+    afterModeRef.current = null;
+    if (useVoice) {
+      getPlayer();
+      spokenUptoRef.current = msgs.length;
+      voiceOnRef.current = true;
+      setVoiceOn(true);
+    }
+    next();
+  }
+
   /** Fresh start for a guest: a motion deep-linked from the
    *  library begins straight into its questions; otherwise the
    *  situation question, exactly as before. */
@@ -558,6 +572,7 @@ export default function Interview() {
       say('bot', 'You picked this one in the library — we will go through it now.');
       chooseMotion(pm);
     } else {
+      say('bot', 'Tell me what is going on, in your own words.');
       setStage('situation');
     }
   }
@@ -984,6 +999,7 @@ export default function Interview() {
 
   /** Stop MediaRecorder + release the mic stream and VAD. */
   function stopRecognition(_suppressEnd = true) {
+    micAttemptRef.current += 1;
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
       retryTimerRef.current = null;
@@ -997,10 +1013,11 @@ export default function Interview() {
       vadTimerRef.current = null;
     }
     const rec = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    mediaChunksRef.current = [];
     if (rec && rec.state !== 'inactive') {
       try { rec.stop(); } catch { /* */ }
     }
-    mediaRecorderRef.current = null;
     const stream = mediaStreamRef.current;
     if (stream) {
       for (const t of stream.getTracks()) {
@@ -1022,13 +1039,14 @@ export default function Interview() {
     try { console.warn('[speech]', msg); } catch { /* */ }
   }
 
-  async function transcribeBlob(blob: Blob): Promise<string | null> {
+  async function transcribeBlob(blob: Blob, attempt: number): Promise<string | null> {
     setSpeechStatus('Transcribing…');
     try {
       const form = new FormData();
       const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm';
       form.append('audio', blob, `answer.${ext}`);
       const res = await fetch('/api/stt', { method: 'POST', body: form });
+      if (attempt !== micAttemptRef.current) return null;
       if (res.status === 503) {
         reportSpeech('Voice typing is not set up on this site yet — typing works just the same.');
         return null;
@@ -1042,6 +1060,7 @@ export default function Interview() {
         return null;
       }
       const data = await res.json().catch(() => ({}));
+      if (attempt !== micAttemptRef.current) return null;
       const text = String((data as any).text || '').trim();
       if (!text) {
         reportSpeech('No speech detected. Tap the mic and try again, or type your answer.');
@@ -1049,7 +1068,7 @@ export default function Interview() {
       }
       return text;
     } catch {
-      reportSpeech('Transcription failed. Check your connection, or type your answer.');
+      if (attempt === micAttemptRef.current) reportSpeech('Transcription failed. Check your connection, or type your answer.');
       return null;
     }
   }
@@ -1079,6 +1098,7 @@ export default function Interview() {
     }
 
     stopRecognition(true);
+    const attempt = micAttemptRef.current;
 
     let stream: MediaStream;
     try {
@@ -1090,6 +1110,7 @@ export default function Interview() {
         },
       });
     } catch (err: any) {
+      if (attempt !== micAttemptRef.current) return false;
       const name = String(err?.name || '');
       autoBlockedRef.current = true;
       if (name.includes('NotAllowed') || name.includes('PermissionDenied')) {
@@ -1102,6 +1123,10 @@ export default function Interview() {
       return false;
     }
 
+    if (attempt !== micAttemptRef.current) {
+      stream.getTracks().forEach((track) => track.stop());
+      return false;
+    }
     mediaStreamRef.current = stream;
     mediaChunksRef.current = [];
 
@@ -1135,15 +1160,17 @@ export default function Interview() {
     const sessionAuto = auto;
 
     recorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
+      if (attempt === micAttemptRef.current && e.data && e.data.size > 0) mediaChunksRef.current.push(e.data);
     };
 
     recorder.onerror = () => {
+      if (attempt !== micAttemptRef.current) return;
       reportSpeech('Recording failed — typing works just the same.');
       stopRecognition(true);
     };
 
     recorder.onstop = () => {
+      if (attempt !== micAttemptRef.current) return;
       const chunks = mediaChunksRef.current.slice();
       mediaChunksRef.current = [];
       const stream2 = mediaStreamRef.current;
@@ -1182,7 +1209,8 @@ export default function Interview() {
       }
 
       void (async () => {
-        const text = await transcribeBlob(blob);
+        const text = await transcribeBlob(blob, attempt);
+        if (attempt !== micAttemptRef.current) return;
         if (text) {
           emptyCyclesRef.current = 0;
           listenPausedRef.current = false;
@@ -1327,32 +1355,13 @@ export default function Interview() {
     }, 400);
   }
 
-  function toggleVoice() {
-    if (voiceOn) {
-      voiceOnRef.current = false;
-      playerRef.current?.stop();
-      stopRecognition(true);
-      listenPausedRef.current = false;
-      emptyCyclesRef.current = 0;
-      setVoiceOn(false);
-      setSpeaking(false);
-      speakingRef.current = false;
-      setSpeechStatus(null);
-      return;
-    }
+  function switchToTyping() {
+    voiceOnRef.current = false;
+    playerRef.current?.stop();
+    stopRecognition(true);
+    setVoiceOn(false);
     setVoiceNote(null);
     setSpeechStatus(null);
-    listenPausedRef.current = false;
-    emptyCyclesRef.current = 0;
-    autoBlockedRef.current = false;
-
-    const p = getPlayer();
-    spokenUptoRef.current = msgs.length;
-    // Speak the current bot prompt only — no long voice-mode disclaimer.
-    const lastBot = [...msgs].reverse().find((m) => m.from === 'bot');
-    p.enqueue(lastBot?.text || 'How can I help you?');
-    voiceOnRef.current = true;
-    setVoiceOn(true);
   }
 
   /** Mic button: start recording, or stop + transcribe if already listening. */
@@ -1602,7 +1611,12 @@ export default function Interview() {
   // answer set is genuinely known ahead of time. Open factual
   // fields (names, dates, amounts, free text) get none.
   const badges: QuickBadge[] = [];
-  if (pendingCounty) {
+  if (stage === 'mode') {
+    badges.push(
+      { label: 'Talk it through', icon: 'mic', action: () => selectMode(true) },
+      { label: 'Type my answers', icon: 'pencil', action: () => selectMode(false) },
+    );
+  } else if (pendingCounty) {
     badges.push(
       { label: 'Yes', primary: true, action: confirmCounty },
       { label: "No, I'll type it", action: declineCounty },
@@ -1876,6 +1890,8 @@ export default function Interview() {
   if (liveQuestion) {
     pageHeading = liveQuestion;
     pageIntro = turnTexts.slice(0, -1);
+  } else if (stage === 'mode') {
+    pageHeading = 'How would you like to do this interview?';
   } else if (stage === 'boot' || stage === 'generating') {
     pageHeading = stage === 'generating' ? 'Preparing your document…' : null;
     pageIntro = stage === 'generating' ? turnTexts.slice(-1) : [];
@@ -2086,7 +2102,7 @@ export default function Interview() {
               <Icon name="calendar" size={19} />
             </button>
           )}
-          <button
+          {voiceOn && <button
             type="button"
             className={`composericon micbtn${listening ? ' listening' : ''}`}
             onClick={toggleMic}
@@ -2095,7 +2111,7 @@ export default function Interview() {
             title={listening ? 'Stop listening' : 'Answer by voice'}
           >
             {listening ? <Icon name="stop" size={18} /> : <Icon name="mic" size={18} />}
-          </button>
+          </button>}
         </div>
       </div>
       {currentField?.type === 'phone' && (
@@ -2249,18 +2265,10 @@ export default function Interview() {
 
   return (
     <div className="interviewpage wizard">
-      <header className="stephead voicebar">
+      <header className="stephead">
         <Link className="homelink" href="/" aria-label="Home">‹</Link>
         <span className="stepmotion">{motion ? motion.name : 'New document'}</span>
         {progressLabel && <span className="progress stepprogress">{progressLabel}</span>}
-        <button
-          type="button"
-          className={`btn voicebtn${voiceOn ? '' : ' primary'}`}
-          onClick={toggleVoice}
-          aria-pressed={voiceOn}
-        >
-          <Icon name="phone" size={15} /> {voiceOn ? 'End voice call' : 'Voice call'}
-        </button>
       </header>
       <div className={`wizprogress${progressPct === null ? ' idle' : ''}`} aria-hidden="true">
         <span style={{ width: `${progressPct ?? 0}%` }} />
@@ -2276,8 +2284,17 @@ export default function Interview() {
             </span>
           )}
           {voiceOn && speaking && (
-            <button type="button" className="btn ghost small" onClick={() => playerRef.current?.stop()}>
+            <button type="button" className="btn ghost small" onClick={() => {
+              playerRef.current?.stop();
+              setSpeechStatus(null);
+              maybeAutoListen();
+            }}>
               Stop speaking
+            </button>
+          )}
+          {voiceOn && (
+            <button type="button" className="btn ghost small" onClick={switchToTyping}>
+              Switch to typing
             </button>
           )}
           {(speechStatus || voiceNote) && <p className="voicenote" role="status">{speechStatus || voiceNote}</p>}
@@ -2307,6 +2324,9 @@ export default function Interview() {
             <h1 className="wizq">
               {pageHeading}
             </h1>
+          )}
+          {stage === 'mode' && (
+            <p className="wizhint">The assistant can read the questions aloud and listen to your answers, or you can read and type at your own pace.</p>
           )}
           {liveHint && <p className="wizhint">{liveHint}</p>}
           {courtBadgesActive && !courtTyped && (
