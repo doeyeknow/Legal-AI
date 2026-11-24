@@ -2,8 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { getMotion } from '@/lib/motions/match';
 import { isValidCoupon } from '@/lib/promo';
+import { stripeKeyStatus, stripeProblemMessage } from '@/lib/stripe-config';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+// Payment status for the site owner: whether the server can see a
+// usable Stripe key, its mode, and which setting it came from. The
+// key itself is never returned.
+export async function GET() {
+  const s = stripeKeyStatus();
+  return NextResponse.json(
+    s.ok
+      ? { configured: true, mode: s.mode, setting: s.source }
+      : { configured: false, problem: s.problem, setting: s.source, message: stripeProblemMessage(s) },
+    { headers: { 'Cache-Control': 'no-store' } },
+  );
+}
 
 // $3 per document, charged at PDF generation/download.
 // If STRIPE_SECRET_KEY is absent we fail soft with a clear message —
@@ -34,17 +49,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, devFree: true });
   }
 
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) {
+  const ks = stripeKeyStatus();
+  if (!ks.ok) {
     return NextResponse.json(
-      {
-        error: 'payments_not_configured',
-        message:
-          'Payments are not configured yet, so we cannot generate paid documents right now. Please check back soon — the interview itself is always free.',
-      },
+      { error: 'payments_not_configured', message: stripeProblemMessage(ks) },
       { status: 503 }
     );
   }
+  const key = ks.key;
 
   const origin = req.headers.get('origin') || 'http://localhost:3300';
   try {
@@ -70,6 +82,7 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ ok: true, url: session.url, sessionId: session.id });
   } catch (e) {
+    console.error('Stripe checkout failed:', e instanceof Error ? e.message : e);
     return NextResponse.json(
       { error: 'checkout_failed', message: 'Checkout could not be started. No charge was made. Please try again in a moment.' },
       { status: 502 }

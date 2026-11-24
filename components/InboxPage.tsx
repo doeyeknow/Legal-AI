@@ -178,6 +178,7 @@ ${(d.replies || []).map((r) => `<div class="reply"><h2>${r.kind === 'forward' ? 
 interface Undo { label: string; ids: string[]; undo: Action }
 
 export default function InboxPage() {
+  const [infoOpen, setInfoOpen] = useState(false);
   const [messages, setMessages] = useState<InboundMessage[] | null>(null);
   const [unreviewed, setUnreviewed] = useState(0);
   const [counts, setCounts] = useState<InboxCounts>(EMPTY_COUNTS);
@@ -566,14 +567,27 @@ export default function InboxPage() {
         <h1>
           <Icon name="mail" size={26} /> Court mail
           {counts.unread > 0 && <span className="newbadge big">{badgeLabel(counts.unread)} new</span>}
+          <button
+            type="button"
+            className="infobtn"
+            aria-label="About court mail and your address"
+            title="About court mail"
+            onClick={() => setInfoOpen(true)}
+          >
+            <Icon name="info" size={16} />
+          </button>
         </h1>
-        <p className="lede">
-          Mail sent to your court-mail address is read for the dates, deadlines, and case numbers
-          your cases need. <strong>Nothing is added to a case until you confirm it</strong>, and
-          nothing is ever filed, sent, or answered automatically.
-        </p>
-        <InboxAddressCard compact />
       </div>
+      {infoOpen && (
+        <Modal title="About court mail" onClose={() => setInfoOpen(false)}>
+          <p className="lede inboxinfo">
+            Mail sent to your court-mail address is read for the dates, deadlines, and case numbers
+            your cases need. <strong>Nothing is added to a case until you confirm it</strong>, and
+            nothing is ever filed, sent, or answered automatically.
+          </p>
+          <InboxAddressCard />
+        </Modal>
+      )}
       {error && <p className="error">{error}</p>}
       {caseFilter && (
         <p className="fineprint">

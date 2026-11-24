@@ -1796,3 +1796,15 @@ main:has(.homepage) { max-width: none; padding: 0; scroll-behavior: smooth; }
   .walkscreen { height: 370px; }
   .walkdevice { max-width: 270px; }
 }
+
+/* Inbox header info button (address + how court mail works live in its popup) */
+.infobtn {
+  display: inline-grid; place-items: center; vertical-align: middle;
+  width: 30px; height: 30px; border-radius: 50%; margin-left: 8px; padding: 0;
+  background: rgba(217, 166, 46, 0.12); border: 1px solid rgba(217, 166, 46, 0.45);
+  color: var(--gold); cursor: pointer;
+}
+.infobtn:hover { background: rgba(217, 166, 46, 0.24); }
+.infobtn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.modalbody .inboxinfo { font-size: 15.5px; margin: 0 0 12px; max-width: none; }
+.modalbody .acctcard { margin: 0; }

@@ -6,9 +6,11 @@ import { getSessionUser } from '@/lib/auth';
 import { getOwnedCaseLite, saveDocumentForUser } from '@/lib/cases';
 import { getCaseFacts } from '@/lib/inbox';
 import { isValidCoupon } from '@/lib/promo';
+import { stripeKeyStatus, stripeProblemMessage } from '@/lib/stripe-config';
 import type { Answers } from '@/lib/motions/types';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 // Generates the PDF only after payment is verified (Stripe session paid,
 // $3.00), or under the local-only LEGAL_DEV_FREE=1 bypass.
@@ -29,13 +31,14 @@ export async function POST(req: NextRequest) {
   // "coupon" is never enough on its own.
   const couponFree = isValidCoupon(body.coupon);
   if (!devFree && !couponFree) {
-    const key = process.env.STRIPE_SECRET_KEY;
-    if (!key) {
+    const ks = stripeKeyStatus();
+    if (!ks.ok) {
       return NextResponse.json(
-        { error: 'payments_not_configured', message: 'Payments are not configured yet.' },
+        { error: 'payments_not_configured', message: stripeProblemMessage(ks) },
         { status: 503 }
       );
     }
+    const key = ks.key;
     const sessionId = String(body.sessionId || '');
     if (!sessionId) {
       return NextResponse.json({ error: 'payment_required', message: 'Payment is required before the document is generated.' }, { status: 402 });
