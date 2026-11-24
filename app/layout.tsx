@@ -5,11 +5,40 @@ import { Icon } from '@/components/icons';
 import Fx from '@/components/Fx';
 import TabBar from '@/components/TabBar';
 import MailWatcher from '@/components/MailWatcher';
+import { SITE_DESCRIPTION, SITE_KEYWORDS, SITE_NAME, SITE_TAGLINE, SITE_URL } from '@/lib/site';
 
 export const metadata: Metadata = {
-  title: 'quikForm.org — Court motions, AI Legal, Court Helper',
-  description:
-    'Answer plain-English questions and get a filing-ready court motion PDF for $3. Continuances, custody and support changes, contempt, fee waivers, eviction stays, and hundreds more court documents. Document preparation, not a law firm.',
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: `${SITE_NAME}.org — Court motions, AI Legal, Court Helper`,
+    template: `%s | ${SITE_NAME}`,
+  },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  keywords: SITE_KEYWORDS,
+  category: 'legal',
+  creator: SITE_NAME,
+  publisher: SITE_NAME,
+  alternates: { canonical: '/' },
+  formatDetection: { telephone: false, email: false, address: false },
+  openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
+    url: '/',
+    locale: 'en_US',
+    title: `${SITE_NAME} — ${SITE_TAGLINE}`,
+    description: SITE_DESCRIPTION,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: `${SITE_NAME} — ${SITE_TAGLINE}`,
+    description: SITE_DESCRIPTION,
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, 'max-image-preview': 'large', 'max-snippet': -1 },
+  },
   manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
@@ -27,9 +56,6 @@ export const metadata: Metadata = {
     'mobile-web-app-capable': 'yes',
   },
 };
-
-
-
 
 export const viewport: Viewport = {
   themeColor: '#0B0E14',

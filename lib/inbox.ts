@@ -28,6 +28,8 @@ import type {
   ExtractedFact,
   InboundMessage,
   InboundMessageDetail,
+  InboxFolder,
+  InboxReply,
 } from './dashboard-types';
 
 export function inboxDomain(): string {
@@ -347,10 +349,17 @@ interface MsgRow {
   from_name: string; from_email: string; subject: string;
   doc_type: string; status: string; auth_warning: boolean;
   is_forward: boolean; received_at: string; proposed_count: string;
+  read_at: string | null; starred: boolean; archived_at: string | null;
+  deleted_at: string | null; snippet: string; attachment_count: string;
+  reply_count: string;
 }
 
 const MSG_COLS = `m.id, m.case_id, m.case_match, m.from_name, m.from_email,
   m.subject, m.doc_type, m.status, m.auth_warning, m.is_forward, m.received_at,
+  m.read_at, m.starred, m.archived_at, m.deleted_at,
+  left(regexp_replace(m.body_text, '\\s+', ' ', 'g'), 160) AS snippet,
+  (SELECT count(*) FROM inbound_attachments a WHERE a.message_id = m.id) AS attachment_count,
+  (SELECT count(*) FROM inbox_replies r WHERE r.message_id = m.id) AS reply_count,
   (SELECT count(*) FROM extracted_facts f
     WHERE f.message_id = m.id AND f.status = 'proposed') AS proposed_count`;
 
@@ -368,21 +377,77 @@ function rowToMessage(r: MsgRow): InboundMessage {
     isForward: r.is_forward,
     receivedAt: new Date(r.received_at).toISOString(),
     proposedCount: Number(r.proposed_count) || 0,
+    read: Boolean(r.read_at),
+    starred: Boolean(r.starred),
+    archived: Boolean(r.archived_at),
+    deleted: Boolean(r.deleted_at),
+    snippet: (r.snippet || '').trim(),
+    attachmentCount: Number(r.attachment_count) || 0,
+    replyCount: Number(r.reply_count) || 0,
+  };
+}
+
+/** Folder → WHERE fragment. Trash holds only deleted mail; every
+ *  other folder hides it. Archived mail leaves Inbox/Unread but is
+ *  still found by Starred and by a search across "All". */
+function folderWhere(folder: InboxFolder): string {
+  switch (folder) {
+    case 'trash': return 'm.deleted_at IS NOT NULL';
+    case 'archived': return 'm.deleted_at IS NULL AND m.archived_at IS NOT NULL';
+    case 'starred': return 'm.deleted_at IS NULL AND m.starred';
+    case 'unread': return 'm.deleted_at IS NULL AND m.archived_at IS NULL AND m.read_at IS NULL';
+    default: return 'm.deleted_at IS NULL AND m.archived_at IS NULL';
+  }
+}
+
+export interface InboxCounts {
+  unread: number;
+  inbox: number;
+  starred: number;
+  archived: number;
+  trash: number;
+}
+
+export async function inboxCounts(userId: string): Promise<InboxCounts> {
+  await ensureSchema();
+  const rows = await query<Record<keyof InboxCounts, string>>(
+    `SELECT
+       count(*) FILTER (WHERE deleted_at IS NULL AND archived_at IS NULL AND read_at IS NULL) AS unread,
+       count(*) FILTER (WHERE deleted_at IS NULL AND archived_at IS NULL) AS inbox,
+       count(*) FILTER (WHERE deleted_at IS NULL AND starred) AS starred,
+       count(*) FILTER (WHERE deleted_at IS NULL AND archived_at IS NOT NULL) AS archived,
+       count(*) FILTER (WHERE deleted_at IS NOT NULL) AS trash
+     FROM inbound_messages WHERE user_id = $1`,
+    [userId],
+  );
+  const r = rows[0];
+  return {
+    unread: Number(r?.unread) || 0,
+    inbox: Number(r?.inbox) || 0,
+    starred: Number(r?.starred) || 0,
+    archived: Number(r?.archived) || 0,
+    trash: Number(r?.trash) || 0,
   };
 }
 
 export async function listInbox(
   userId: string,
-  opts: { unreadOnly?: boolean; caseId?: string | null } = {},
-): Promise<{ messages: InboundMessage[]; unreviewed: number }> {
+  opts: { unreadOnly?: boolean; caseId?: string | null; folder?: InboxFolder; q?: string | null } = {},
+): Promise<{ messages: InboundMessage[]; unreviewed: number; counts: InboxCounts }> {
   await ensureSchema();
-  const where = ['m.user_id = $1'];
+  const where = ['m.user_id = $1', folderWhere(opts.folder || 'inbox')];
   const params: unknown[] = [userId];
   if (opts.caseId) {
     params.push(opts.caseId);
     where.push(`m.case_id = $${params.length}`);
   }
   if (opts.unreadOnly) where.push(`m.status NOT IN ('filed','dismissed')`);
+  const q = (opts.q || '').trim().slice(0, 120);
+  if (q) {
+    params.push(`%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
+    const p = `$${params.length}`;
+    where.push(`(m.subject ILIKE ${p} OR m.from_name ILIKE ${p} OR m.from_email ILIKE ${p} OR m.body_text ILIKE ${p})`);
+  }
   const rows = await query<MsgRow>(
     `SELECT ${MSG_COLS} FROM inbound_messages m
      WHERE ${where.join(' AND ')} ORDER BY m.received_at DESC LIMIT 200`,
@@ -390,12 +455,122 @@ export async function listInbox(
   );
   const cnt = await query<{ n: string }>(
     `SELECT count(*) AS n FROM inbound_messages m
-     WHERE m.user_id = $1 AND m.status NOT IN ('filed','dismissed') AND EXISTS (
+     WHERE m.user_id = $1 AND m.deleted_at IS NULL AND m.status NOT IN ('filed','dismissed') AND EXISTS (
        SELECT 1 FROM extracted_facts f WHERE f.message_id = m.id AND f.status = 'proposed'
      )`,
     [userId],
   );
-  return { messages: rows.map(rowToMessage), unreviewed: Number(cnt[0]?.n) || 0 };
+  const counts = await inboxCounts(userId);
+  return { messages: rows.map(rowToMessage), unreviewed: Number(cnt[0]?.n) || 0, counts };
+}
+
+export type MailboxAction =
+  | 'read' | 'unread' | 'star' | 'unstar' | 'archive' | 'unarchive'
+  | 'trash' | 'restore';
+
+export const MAILBOX_ACTIONS: MailboxAction[] = [
+  'read', 'unread', 'star', 'unstar', 'archive', 'unarchive', 'trash', 'restore',
+];
+
+/** Apply one mailbox action to one or more of the user's messages.
+ *  Returns how many rows changed. Ownership is in the WHERE. */
+export async function applyMailboxAction(
+  userId: string,
+  ids: string[],
+  action: MailboxAction,
+): Promise<number> {
+  await ensureSchema();
+  if (!ids.length) return 0;
+  const set: Record<MailboxAction, string> = {
+    read: 'read_at = COALESCE(read_at, now())',
+    unread: 'read_at = NULL',
+    star: 'starred = true',
+    unstar: 'starred = false',
+    archive: 'archived_at = now(), read_at = COALESCE(read_at, now())',
+    unarchive: 'archived_at = NULL',
+    trash: 'deleted_at = now(), read_at = COALESCE(read_at, now())',
+    restore: 'deleted_at = NULL',
+  };
+  const rows = await query<{ id: string }>(
+    `UPDATE inbound_messages SET ${set[action]}
+     WHERE user_id = $1 AND id = ANY($2::uuid[]) RETURNING id`,
+    [userId, ids],
+  );
+  return rows.length;
+}
+
+/** "Delete forever" — only for mail already in the Trash, so a
+ *  single mis-tap can never destroy mail in the inbox. Facts and
+ *  attachments go with it (ON DELETE CASCADE); confirmed facts
+ *  already applied to a case stay in the case. */
+export async function deleteMessagesForever(userId: string, ids: string[]): Promise<number> {
+  await ensureSchema();
+  if (!ids.length) return 0;
+  const rows = await query<{ id: string }>(
+    `DELETE FROM inbound_messages
+     WHERE user_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NOT NULL
+     RETURNING id`,
+    [userId, ids],
+  );
+  return rows.length;
+}
+
+export async function emptyTrash(userId: string): Promise<number> {
+  await ensureSchema();
+  const rows = await query<{ id: string }>(
+    `DELETE FROM inbound_messages WHERE user_id = $1 AND deleted_at IS NOT NULL RETURNING id`,
+    [userId],
+  );
+  return rows.length;
+}
+
+export async function recordInboxReply(input: {
+  userId: string;
+  messageId: string;
+  kind: 'reply' | 'forward';
+  toEmail: string;
+  subject: string;
+  body: string;
+  providerId: string;
+}): Promise<InboxReply> {
+  await ensureSchema();
+  const rows = await query<{ id: string; sent_at: string }>(
+    `INSERT INTO inbox_replies (user_id, message_id, kind, to_email, subject, body, provider_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, sent_at`,
+    [input.userId, input.messageId, input.kind, input.toEmail, input.subject, input.body, input.providerId],
+  );
+  return {
+    id: rows[0].id,
+    kind: input.kind,
+    toEmail: input.toEmail,
+    subject: input.subject,
+    body: input.body,
+    sentAt: new Date(rows[0].sent_at).toISOString(),
+  };
+}
+
+export async function countInboxSends(userId: string, minutes: number): Promise<number> {
+  await ensureSchema();
+  const rows = await query<{ n: string }>(
+    `SELECT count(*) AS n FROM inbox_replies
+     WHERE user_id = $1 AND sent_at > now() - ($2::text || ' minutes')::interval`,
+    [userId, String(minutes)],
+  );
+  return Number(rows[0]?.n) || 0;
+}
+
+/** The message headers a threaded reply needs. */
+export async function getReplyContext(
+  userId: string,
+  messageId: string,
+): Promise<{ messageIdHeader: string | null; caseId: string | null } | null> {
+  await ensureSchema();
+  const rows = await query<{ message_id: string | null; case_id: string | null }>(
+    `SELECT message_id, case_id FROM inbound_messages WHERE id = $1 AND user_id = $2`,
+    [messageId, userId],
+  );
+  if (!rows[0]) return null;
+  return { messageIdHeader: rows[0].message_id, caseId: rows[0].case_id };
 }
 
 interface FactRow {
@@ -448,8 +623,19 @@ export async function getMessageDetail(
      FROM inbound_attachments WHERE message_id = $1 ORDER BY created_at ASC`,
     [messageId],
   );
+  const replies = await query<{
+    id: string; kind: 'reply' | 'forward'; to_email: string; subject: string; body: string; sent_at: string;
+  }>(
+    `SELECT id, kind, to_email, subject, body, sent_at FROM inbox_replies
+     WHERE message_id = $1 AND user_id = $2 ORDER BY sent_at ASC`,
+    [messageId, userId],
+  );
   return {
     ...rowToMessage(m),
+    replies: replies.map((r) => ({
+      id: r.id, kind: r.kind, toEmail: r.to_email, subject: r.subject, body: r.body,
+      sentAt: new Date(r.sent_at).toISOString(),
+    })),
     bodyText: m.body_text,
     bodyHtml: m.body_html,
     toAddresses: m.to_addresses || [],

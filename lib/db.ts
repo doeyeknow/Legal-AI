@@ -323,6 +323,70 @@ export function ensureSchema(): Promise<void> {
       await query(
         `CREATE INDEX IF NOT EXISTS push_subs_user_idx ON push_subscriptions (user_id)`,
       );
+      // ---- Inbox mailbox state (read / starred / archived / trash) ----
+      // Mailbox state is separate from the review status: a message
+      // can be read but still have facts waiting, or archived after
+      // its facts were filed. read_at NULL = new (drives the unread
+      // badge). deleted_at set = in the Trash; "Delete forever"
+      // removes the row itself.
+      await query(
+        `ALTER TABLE inbound_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ`,
+      );
+      await query(
+        `ALTER TABLE inbound_messages ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`,
+      );
+      await query(
+        `ALTER TABLE inbound_messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`,
+      );
+      await query(
+        `ALTER TABLE inbound_messages ADD COLUMN IF NOT EXISTS starred BOOLEAN NOT NULL DEFAULT false`,
+      );
+      // One-time backfill: mail already reviewed before read state
+      // existed counts as read, so the badge starts honest.
+      await query(
+        `UPDATE inbound_messages SET read_at = COALESCE(read_at, received_at)
+         WHERE read_at IS NULL AND status IN ('filed','dismissed')`,
+      );
+      // Replies and forwards sent from the inbox, so the message
+      // view can show what was sent and the send limit counts them.
+      await query(`CREATE TABLE IF NOT EXISTS inbox_replies (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        message_id UUID REFERENCES inbound_messages(id) ON DELETE SET NULL,
+        kind TEXT NOT NULL DEFAULT 'reply' CHECK (kind IN ('reply','forward')),
+        to_email TEXT NOT NULL,
+        subject TEXT NOT NULL DEFAULT '',
+        body TEXT NOT NULL DEFAULT '',
+        provider_id TEXT,
+        sent_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`);
+      await query(
+        `CREATE INDEX IF NOT EXISTS inbox_replies_msg_idx ON inbox_replies (message_id, sent_at)`,
+      );
+      await query(
+        `CREATE INDEX IF NOT EXISTS inbox_replies_user_idx ON inbox_replies (user_id, sent_at DESC)`,
+      );
+      // Case timeline: events the user records themselves (what
+      // happened, when, who was there). The timeline view merges
+      // these with the dates the case already holds (documents,
+      // deadlines, communications, court mail, hearing).
+      await query(`CREATE TABLE IF NOT EXISTS case_events (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        case_id UUID NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL DEFAULT 'note',
+        title TEXT NOT NULL,
+        details TEXT NOT NULL DEFAULT '',
+        occurred_on DATE NOT NULL,
+        occurred_time TEXT,
+        location TEXT NOT NULL DEFAULT '',
+        people TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`);
+      await query(
+        `CREATE INDEX IF NOT EXISTS case_events_case_idx ON case_events (case_id, occurred_on, occurred_time)`,
+      );
     })().catch((err) => {
       globalThis.__legalSchemaReady = undefined;
       throw err;

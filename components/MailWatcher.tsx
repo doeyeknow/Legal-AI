@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { registerPushWorker } from '@/lib/pushClient';
+import { setUnreadCount } from '@/lib/unread-store';
 
 // App-shell watcher: registers the push service worker once, and
 // polls a lightweight endpoint for the newest inbound message so a
@@ -43,7 +44,7 @@ export default function MailWatcher() {
 
   const poll = useCallback(async () => {
     if (typeof document !== 'undefined' && document.hidden) return;
-    let data: { latest?: LatestMail | null };
+    let data: { latest?: LatestMail | null; unread?: number };
     try {
       const res = await fetch('/api/inbox/unread', { cache: 'no-store' });
       if (!res.ok) return;
@@ -51,6 +52,7 @@ export default function MailWatcher() {
     } catch {
       return;
     }
+    if (typeof data.unread === 'number') setUnreadCount(data.unread);
     const latest = data.latest || null;
     if (baselineRef.current === undefined) {
       // Baseline only — never toast mail that predates the session.

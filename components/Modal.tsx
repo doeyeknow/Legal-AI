@@ -16,6 +16,9 @@ import { Icon } from './icons';
  * success. The page behind never scrolls (the shell is fixed);
  * a long form scrolls inside the sheet.
  *
+ * size="wide" gives a large viewer (document previews, the email
+ * composer); headerActions sit beside the ✕ in the title bar.
+ *
  * Portaled to document.body: a fixed-position sheet must escape
  * any ancestor with backdrop-filter (the chat dock has one),
  * which would otherwise become its containing block and clip it.
@@ -24,10 +27,16 @@ export default function Modal({
   title,
   onClose,
   children,
+  size,
+  headerActions,
+  footer,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  size?: 'wide';
+  headerActions?: ReactNode;
+  footer?: ReactNode;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -44,7 +53,7 @@ export default function Modal({
       role="presentation"
     >
       <div
-        className="modalcard"
+        className={`modalcard${size === 'wide' ? ' wide' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -52,16 +61,20 @@ export default function Modal({
       >
         <div className="modalhead">
           <h3>{title}</h3>
-          <button
-            type="button"
-            className="modalx"
-            aria-label="Close"
-            onClick={onClose}
-          >
-            <Icon name="close" size={20} />
-          </button>
+          <div className="modalheadactions">
+            {headerActions}
+            <button
+              type="button"
+              className="modalx"
+              aria-label="Close"
+              onClick={onClose}
+            >
+              <Icon name="close" size={20} />
+            </button>
+          </div>
         </div>
         <div className="modalbody">{children}</div>
+        {footer && <div className="modalfoot">{footer}</div>}
       </div>
     </div>,
     document.body

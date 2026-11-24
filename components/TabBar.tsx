@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Icon, type IconName } from './icons';
+import { useUnreadCount, badgeLabel } from '@/lib/unread-store';
 
 /** Native-app bottom tab bar: Home, Library, the interview
  *  (center, raised and gold — it is the point of the app), My
@@ -19,6 +20,7 @@ const TABS: { href: string; label: string; icon: IconName; center?: boolean; mat
 
 export default function TabBar() {
   const pathname = usePathname() || '/';
+  const unread = useUnreadCount();
   if (pathname.startsWith('/interview') || pathname.startsWith('/dashboard') || pathname.startsWith('/library')) return null;
   return (
     <nav className="tabbar" aria-label="Main">
@@ -30,8 +32,14 @@ export default function TabBar() {
             href={t.href}
             className={`tab${t.center ? ' center' : ''}${active ? ' active' : ''}`}
             aria-current={active ? 'page' : undefined}
+            aria-label={t.href === '/dashboard' && unread > 0 ? `${t.label}, ${unread} new emails` : undefined}
           >
-            <span className="tabicon" aria-hidden="true"><Icon name={t.icon} size={t.center ? 25 : 22} /></span>
+            <span className="tabicon" aria-hidden="true">
+              <Icon name={t.icon} size={t.center ? 25 : 22} />
+              {t.href === '/dashboard' && unread > 0 && (
+                <span className="newbadge corner">{badgeLabel(unread)}</span>
+              )}
+            </span>
             <span className="tablabel">{t.label}</span>
           </Link>
         );

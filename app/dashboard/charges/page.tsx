@@ -1,6 +1,9 @@
 import ChargesSearch from '@/components/ChargesSearch';
 import { CHARGES, CHARGE_CATEGORIES, CHARGES_FRAMING } from '@/lib/charges';
 import { DISCLAIMER } from '@/lib/motions/types';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Charge library' };
 
 export default function ChargesPage() {
   return (

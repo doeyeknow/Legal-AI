@@ -19,15 +19,19 @@ export default function ContextMenu({
   children,
   className,
   menuLabel,
+  onOpen,
 }: {
   actions: CtxAction[];
   children: ReactNode;
   className?: string;
   menuLabel?: string;
+  /** A plain tap/click on the row (not a long-press) — e.g. preview. */
+  onOpen?: () => void;
 }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startRef = useRef<{ x: number; y: number } | null>(null);
+  const longPressedRef = useRef(false);
 
   const open = (x: number, y: number) => {
     const vw = window.innerWidth;
@@ -56,8 +60,10 @@ export default function ContextMenu({
     if (e.button !== 0) return;
     startRef.current = { x: e.clientX, y: e.clientY };
     cancel();
+    longPressedRef.current = false;
     timer.current = setTimeout(() => {
       startRef.current = null;
+      longPressedRef.current = true;
       open(e.clientX, e.clientY);
     }, 450);
   };
@@ -75,6 +81,17 @@ export default function ContextMenu({
       onPointerMove={onPointerMove}
       onPointerCancel={cancel}
       onContextMenu={(e) => { e.preventDefault(); open(e.clientX, e.clientY); }}
+      onClick={(e) => {
+        if (!onOpen) return;
+        if ((e.target as HTMLElement).closest('.ctxbackdrop, .ctxbtn')) return;
+        if (longPressedRef.current) { longPressedRef.current = false; return; }
+        onOpen();
+      }}
+      role={onOpen ? 'button' : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      onKeyDown={onOpen ? (e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); onOpen(); }
+      } : undefined}
     >
       {children}
       <button

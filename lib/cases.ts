@@ -7,6 +7,7 @@ import { ensureSchema, query } from "./db";
 import type {
   Appearance,
   CaseDetail,
+  CaseEvent,
   CaseDocument,
   CaseSummary,
   CommEntry,
@@ -227,7 +228,7 @@ export async function getCaseDetail(
             (SELECT count(*) FROM extracted_facts f
               WHERE f.message_id = m.id AND f.status = 'proposed') AS proposed_count
      FROM inbound_messages m
-     WHERE m.case_id = $1 AND m.user_id = $2
+     WHERE m.case_id = $1 AND m.user_id = $2 AND m.deleted_at IS NULL
      ORDER BY m.received_at DESC`,
     [caseId, userId],
   );
@@ -247,6 +248,12 @@ export async function getCaseDetail(
             last_note, created_at
      FROM watches WHERE case_id = $1 ORDER BY created_at DESC`,
     [caseId],
+  );
+  const events = await query<EventRow>(
+    `SELECT ${EVENT_COLS} FROM case_events
+     WHERE case_id = $1 AND user_id = $2
+     ORDER BY occurred_on ASC, occurred_time ASC NULLS FIRST, created_at ASC`,
+    [caseId, userId],
   );
   const apps = await query<AppearanceRow>(
     `SELECT id, case_id, hearing_at, platform, join_url, phone_backup, remote_status
@@ -338,6 +345,7 @@ export async function getCaseDetail(
       receivedAt: String(m.received_at),
       proposedCount: Number(m.proposed_count) || 0,
     })),
+    events: events.map(rowToEvent),
   };
 }
 
@@ -975,6 +983,102 @@ export async function renameDocument(
      WHERE d.id = $1 AND d.case_id = c.id AND c.id = $2 AND c.user_id = $3
      RETURNING d.id`,
     [docId, caseId, userId, label],
+  );
+  return rows.length > 0;
+}
+
+// ---- Case timeline events -------------------------------------
+
+interface EventRow {
+  id: string; case_id: string; kind: string; title: string; details: string;
+  occurred_on: string | Date; occurred_time: string | null; location: string; people: string;
+  created_at: string; updated_at: string;
+}
+const EVENT_COLS =
+  'id, case_id, kind, title, details, occurred_on, occurred_time, location, people, created_at, updated_at';
+
+function dateOnly(v: string | Date): string {
+  if (v instanceof Date) {
+    // DATE columns arrive as local-midnight Dates; format without a UTC shift.
+    const y = v.getFullYear();
+    const m = String(v.getMonth() + 1).padStart(2, '0');
+    const d = String(v.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return String(v).slice(0, 10);
+}
+
+function rowToEvent(r: EventRow): CaseEvent {
+  return {
+    id: r.id,
+    caseId: r.case_id,
+    kind: r.kind,
+    title: r.title,
+    details: r.details,
+    occurredOn: dateOnly(r.occurred_on),
+    occurredTime: r.occurred_time || null,
+    location: r.location,
+    people: r.people,
+    createdAt: new Date(r.created_at).toISOString(),
+    updatedAt: new Date(r.updated_at).toISOString(),
+  };
+}
+
+export interface CaseEventInput {
+  kind: string;
+  title: string;
+  details: string;
+  occurredOn: string;
+  occurredTime: string | null;
+  location: string;
+  people: string;
+}
+
+export async function addCaseEvent(
+  userId: string,
+  caseId: string,
+  input: CaseEventInput,
+): Promise<CaseEvent | null> {
+  await ensureSchema();
+  if (!(await getOwnedCaseRow(userId, caseId))) return null;
+  const rows = await query<EventRow>(
+    `INSERT INTO case_events (case_id, user_id, kind, title, details, occurred_on, occurred_time, location, people)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     RETURNING ${EVENT_COLS}`,
+    [caseId, userId, input.kind, input.title, input.details, input.occurredOn,
+      input.occurredTime, input.location, input.people],
+  );
+  await query(`UPDATE cases SET updated_at = now() WHERE id = $1`, [caseId]);
+  return rows[0] ? rowToEvent(rows[0]) : null;
+}
+
+export async function updateCaseEvent(
+  userId: string,
+  caseId: string,
+  eventId: string,
+  input: CaseEventInput,
+): Promise<CaseEvent | null> {
+  await ensureSchema();
+  const rows = await query<EventRow>(
+    `UPDATE case_events SET kind = $4, title = $5, details = $6, occurred_on = $7,
+            occurred_time = $8, location = $9, people = $10, updated_at = now()
+     WHERE id = $1 AND case_id = $2 AND user_id = $3
+     RETURNING ${EVENT_COLS}`,
+    [eventId, caseId, userId, input.kind, input.title, input.details, input.occurredOn,
+      input.occurredTime, input.location, input.people],
+  );
+  return rows[0] ? rowToEvent(rows[0]) : null;
+}
+
+export async function deleteCaseEvent(
+  userId: string,
+  caseId: string,
+  eventId: string,
+): Promise<boolean> {
+  await ensureSchema();
+  const rows = await query<{ id: string }>(
+    `DELETE FROM case_events WHERE id = $1 AND case_id = $2 AND user_id = $3 RETURNING id`,
+    [eventId, caseId, userId],
   );
   return rows.length > 0;
 }

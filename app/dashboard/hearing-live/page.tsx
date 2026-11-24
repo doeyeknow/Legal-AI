@@ -1,5 +1,8 @@
 import HearingLive from '@/components/HearingLive';
 import { DISCLAIMER } from '@/lib/motions/types';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Hearing companion' };
 
 export default function HearingLivePage() {
   return (

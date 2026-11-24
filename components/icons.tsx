@@ -12,7 +12,9 @@ export type IconName =
   | 'arrowUpCircle' | 'flag' | 'files' | 'calendar' | 'search'
   | 'list' | 'headphones' | 'doc' | 'check' | 'close' | 'mail'
   | 'help' | 'dots' | 'download' | 'printer' | 'share' | 'trash'
-  | 'pencil' | 'info' | 'backspace';
+  | 'pencil' | 'info' | 'backspace' | 'eye' | 'reply' | 'forward'
+  | 'archive' | 'unarchive' | 'star' | 'starFill' | 'mailOpen' | 'restore'
+  | 'inbox' | 'chevronLeft' | 'chevronRight' | 'sparkle' | 'refresh' | 'paperclip';
 
 const P: Record<IconName, ReactNode> = {
   backspace: (
@@ -277,6 +279,73 @@ const P: Record<IconName, ReactNode> = {
       <path d="M12 7.8v.4" />
     </>
   ),
+  eye: (
+    <>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  reply: (
+    <>
+      <path d="M9.5 6L4 11.5 9.5 17" />
+      <path d="M4.5 11.5H14a6 6 0 0 1 6 6V19" />
+    </>
+  ),
+  forward: (
+    <>
+      <path d="M14.5 6L20 11.5 14.5 17" />
+      <path d="M19.5 11.5H10a6 6 0 0 0-6 6V19" />
+    </>
+  ),
+  archive: (
+    <>
+      <rect x="3.5" y="4.5" width="17" height="4" rx="1" />
+      <path d="M5 8.5V18a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 18V8.5" />
+      <path d="M10 12.5h4" />
+    </>
+  ),
+  unarchive: (
+    <>
+      <rect x="3.5" y="4.5" width="17" height="4" rx="1" />
+      <path d="M5 8.5V18a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 18V8.5" />
+      <path d="M12 17v-5.5M9.5 14l2.5-2.5 2.5 2.5" />
+    </>
+  ),
+  star: <path d="M12 3.8l2.5 5.2 5.7.8-4.1 4 1 5.7L12 16.8l-5.1 2.7 1-5.7-4.1-4 5.7-.8L12 3.8Z" />,
+  starFill: <path d="M12 3.8l2.5 5.2 5.7.8-4.1 4 1 5.7L12 16.8l-5.1 2.7 1-5.7-4.1-4 5.7-.8L12 3.8Z" fill="currentColor" />,
+  mailOpen: (
+    <>
+      <path d="M3.5 10l8.5-6 8.5 6v8.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5V10Z" />
+      <path d="M3.8 10.3l8.2 5.4 8.2-5.4" />
+    </>
+  ),
+  restore: (
+    <>
+      <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3" />
+      <path d="M4 4.5v4h4" />
+    </>
+  ),
+  inbox: (
+    <>
+      <path d="M4 13.5l2.2-7.4A1.5 1.5 0 0 1 7.6 5h8.8a1.5 1.5 0 0 1 1.4 1.1L20 13.5" />
+      <path d="M4 13.5V18a1.5 1.5 0 0 0 1.5 1.5h13A1.5 1.5 0 0 0 20 18v-4.5h-4.5l-1 2h-5l-1-2H4Z" />
+    </>
+  ),
+  chevronLeft: <path d="M14.5 5.5L8 12l6.5 6.5" />,
+  chevronRight: <path d="M9.5 5.5L16 12l-6.5 6.5" />,
+  sparkle: (
+    <>
+      <path d="M12 3.5l1.8 5 5 1.8-5 1.8-1.8 5-1.8-5-5-1.8 5-1.8 1.8-5Z" />
+      <path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7.7-1.8Z" />
+    </>
+  ),
+  refresh: (
+    <>
+      <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" />
+      <path d="M20 4.5v4h-4" />
+    </>
+  ),
+  paperclip: <path d="M19 11.5l-7.1 7.1a4.5 4.5 0 0 1-6.4-6.4L13 4.7a3 3 0 0 1 4.2 4.2l-7.4 7.4a1.5 1.5 0 0 1-2.1-2.1L14.5 7.4" />,
 };
 
 /** One simple line illustration. Inherits the surrounding text

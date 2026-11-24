@@ -7,6 +7,9 @@ import {
   WARRANT_SHOWS_NOT_PROVE,
 } from '@/lib/portals';
 import { DISCLAIMER } from '@/lib/motions/types';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Warrants & case lookup' };
 
 export default function WarrantsPage() {
   return (

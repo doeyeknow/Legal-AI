@@ -5,10 +5,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import DashGate from './DashGate';
 import Modal from './Modal';
+import DocPreview, { type PreviewTarget } from './DocPreview';
 import ContextMenu, { type CtxAction } from './ContextMenu';
 import ReplyBadge from './ReplyBadge';
 import { Icon } from './icons';
 import { localToday } from '@/lib/reply-state';
+import { useUnreadCount, badgeLabel } from '@/lib/unread-store';
 import type { CaseSummary, Deadline } from '@/lib/dashboard-types';
 import { deadlineType } from '@/lib/comm-templates';
 import { getMotion } from '@/lib/motions/match';
@@ -52,6 +54,8 @@ function CaseFolders({ onRenamed }: { onRenamed: () => void }) {
   const [cases, setCases] = useState<CaseSummary[] | null>(null);
   const [upcoming, setUpcoming] = useState<Upcoming[]>([]);
   const [mailCount, setMailCount] = useState(0);
+  const unread = useUnreadCount();
+  const [preview, setPreview] = useState<PreviewTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState('');
@@ -165,6 +169,16 @@ function CaseFolders({ onRenamed }: { onRenamed: () => void }) {
         onSelect: () => router.push(`/dashboard/cases/${c.id}`),
       },
       {
+        label: 'Preview', icon: 'eye',
+        onSelect: () => {
+          void withNewestPdf(c, (u) => setPreview({
+            title: c.title,
+            url: u,
+            note: 'The newest document in this case. Regenerated from your saved answers — the signature line is blank.',
+          }));
+        },
+      },
+      {
         label: 'Download', icon: 'download',
         onSelect: () => { void withNewestPdf(c, downloadPdf); },
       },
@@ -212,10 +226,14 @@ function CaseFolders({ onRenamed }: { onRenamed: () => void }) {
   return (
     <div>
       {notice && <p className="finder-notice" role="status">{notice}</p>}
+      {preview && <DocPreview target={preview} onClose={() => setPreview(null)} />}
 
       <section className="dashsection">
         <Link className="mailbanner" href="/dashboard/inbox">
-          <span className="mailicon"><Icon name="mail" size={20} /></span>
+          <span className="mailicon">
+            <Icon name="mail" size={20} />
+            {unread > 0 && <span className="newbadge corner" aria-label={`${unread} new`}>{badgeLabel(unread)}</span>}
+          </span>
           <span className="mailtexts">
             <strong>Court mail</strong>
             <span>
@@ -223,6 +241,7 @@ function CaseFolders({ onRenamed }: { onRenamed: () => void }) {
               added to a case until you confirm it.
             </span>
           </span>
+          {unread > 0 && <span className="statuspill new">{unread} new</span>}
           {mailCount > 0 && <span className="statuspill draft">{mailCount} to review</span>}
         </Link>
       </section>

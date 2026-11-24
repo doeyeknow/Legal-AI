@@ -134,6 +134,26 @@ export interface InboundMessage {
   receivedAt: string;
   /** Proposed facts still waiting for the user's review. */
   proposedCount: number;
+  /** Mailbox state — separate from the review status above. */
+  read: boolean;
+  starred: boolean;
+  archived: boolean;
+  deleted: boolean;
+  /** A short plain-text preview of the body for the list. */
+  snippet: string;
+  attachmentCount: number;
+  replyCount: number;
+}
+
+export type InboxFolder = 'inbox' | 'unread' | 'starred' | 'archived' | 'trash';
+
+export interface InboxReply {
+  id: string;
+  kind: 'reply' | 'forward';
+  toEmail: string;
+  subject: string;
+  body: string;
+  sentAt: string;
 }
 
 export interface InboundMessageDetail extends InboundMessage {
@@ -142,6 +162,7 @@ export interface InboundMessageDetail extends InboundMessage {
   toAddresses: string[];
   facts: ExtractedFact[];
   attachments: InboundAttachmentMeta[];
+  replies: InboxReply[];
 }
 
 /** Court mail assigned to one case, as the case page shows it. */
@@ -156,6 +177,36 @@ export interface CourtMailSummary {
   proposedCount: number;
 }
 
+/** A timeline event the user recorded on a case. */
+export interface CaseEvent {
+  id: string;
+  caseId: string;
+  /** One of CASE_EVENT_KINDS keys. */
+  kind: string;
+  title: string;
+  details: string;
+  /** YYYY-MM-DD */
+  occurredOn: string;
+  /** HH:MM (24h), when known. */
+  occurredTime: string | null;
+  location: string;
+  people: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const CASE_EVENT_KINDS = [
+  { key: 'incident', label: 'Something happened' },
+  { key: 'hearing', label: 'Hearing or court date' },
+  { key: 'filing', label: 'Filing' },
+  { key: 'service', label: 'Papers served or received' },
+  { key: 'order', label: 'Court order or ruling' },
+  { key: 'communication', label: 'Call, letter, or meeting' },
+  { key: 'payment', label: 'Payment' },
+  { key: 'evidence', label: 'Evidence gathered' },
+  { key: 'note', label: 'Note' },
+] as const;
+
 export interface CaseDetail extends CaseSummary {
   documents: (CaseDocument & { answers: Record<string, string> })[];
   deadlines: Deadline[];
@@ -163,6 +214,7 @@ export interface CaseDetail extends CaseSummary {
   watches: Watch[];
   appearance: Appearance | null;
   courtMail: CourtMailSummary[];
+  events: CaseEvent[];
 }
 
 export const CASE_STATUSES = [

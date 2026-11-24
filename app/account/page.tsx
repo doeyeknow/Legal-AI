@@ -1,6 +1,14 @@
 import AccountPanel from '@/components/AccountPanel';
 import InstallHint from '@/components/InstallHint';
 import { DISCLAIMER } from '@/lib/motions/types';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: 'Your account',
+  description: 'Sign in or create a free quikForm account so your information fills out every court document for you.',
+  alternates: { canonical: '/account' },
+  robots: { index: false, follow: true },
+};
 
 export default function AccountPage() {
   return (

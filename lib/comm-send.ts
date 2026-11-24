@@ -34,6 +34,9 @@ export async function sendViaResend(input: {
   subject: string;
   text: string;
   replyTo: string;
+  /** Optional extra headers, e.g. In-Reply-To / References so a
+   *  reply threads under the original in the recipient's mailbox. */
+  headers?: Record<string, string>;
 }): Promise<CommSendResult> {
   let res: Response;
   try {
@@ -49,6 +52,7 @@ export async function sendViaResend(input: {
         subject: input.subject,
         text: input.text,
         reply_to: input.replyTo,
+        ...(input.headers && Object.keys(input.headers).length ? { headers: input.headers } : {}),
       }),
     });
   } catch {

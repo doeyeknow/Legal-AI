@@ -1,5 +1,8 @@
 import PracticeSim from '@/components/PracticeSim';
 import { DISCLAIMER } from '@/lib/motions/types';
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Hearing practice' };
 
 export default function PracticePage() {
   return (

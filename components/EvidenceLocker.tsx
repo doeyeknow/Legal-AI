@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import DashGate from './DashGate';
 import Modal from './Modal';
+import DocPreview, { type PreviewTarget } from './DocPreview';
 import ContextMenu, { type CtxAction } from './ContextMenu';
 import { Icon } from './icons';
 import {
@@ -39,6 +40,7 @@ function LockerBody() {
   const [props, setProps] = useState<EvidenceDoc | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<PreviewTarget | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -100,9 +102,18 @@ function LockerBody() {
     }
   }
 
+  function openPreview(d: EvidenceDoc) {
+    setPreview({
+      title: d.label || d.motionName,
+      url: documentPdfUrl(d.caseId, d.id),
+      note: 'Regenerated from your saved answers — your drawn signature isn’t stored, so the signature line is blank.',
+    });
+  }
+
   function docActions(d: EvidenceDoc): CtxAction[] {
     const url = documentPdfUrl(d.caseId, d.id);
     return [
+      { label: 'Preview', icon: 'eye', onSelect: () => openPreview(d) },
       {
         label: 'Filing Instructions', icon: 'doc',
         onSelect: () => router.push(`/dashboard/cases/${d.caseId}`),
@@ -139,7 +150,7 @@ function LockerBody() {
       <ul className="evidencelist">
         {docs.map((d) => (
           <li key={d.id}>
-            <ContextMenu actions={docActions(d)} menuLabel={`Menu for ${d.label || d.motionName}`} className="filerow">
+            <ContextMenu actions={docActions(d)} menuLabel={`Menu for ${d.label || d.motionName}`} className="filerow" onOpen={() => openPreview(d)}>
               <span className="fileicon" aria-hidden="true">
                 <Icon name="doc" size={26} />
               </span>
@@ -155,6 +166,7 @@ function LockerBody() {
         ))}
       </ul>
 
+      {preview && <DocPreview target={preview} onClose={() => setPreview(null)} />}
       {renaming && (
         <Modal title="Rename document" onClose={() => setRenaming(null)}>
           <div className="field">

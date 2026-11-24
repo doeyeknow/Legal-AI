@@ -4,9 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import DashGate from './DashGate';
 import Modal from './Modal';
+import DocPreview, { type PreviewTarget } from './DocPreview';
 import ReplyBadge from './ReplyBadge';
 import { caseReplyState, localToday, replyMarks } from '@/lib/reply-state';
 import CommDraft from './CommDraft';
+import CaseTimeline from './CaseTimeline';
 import type {
   Appearance,
   CaseDetail as CaseDetailT,
@@ -141,6 +143,7 @@ function CaseSections({
         </div>
       )}
 
+      <CaseTimeline data={data} setData={setData} />
       <DocumentsSection data={data} reload={reload} />
       <DeadlinesSection data={data} setData={setData} />
       <AppearanceSection data={data} setData={setData} />
@@ -158,6 +161,14 @@ function DocumentsSection({ data, reload }: { data: CaseDetailT; reload: () => v
   const [props, setProps] = useState<CaseDetailT['documents'][number] | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<PreviewTarget | null>(null);
+
+  const openPreview = (d: CaseDetailT['documents'][number]) =>
+    setPreview({
+      title: d.label || d.motionName,
+      url: documentPdfUrl(data.id, d.id),
+      note: 'Regenerated from your saved answers — your drawn signature isn’t stored, so the signature line is blank.',
+    });
 
   useEffect(() => {
     if (!notice) return;
@@ -203,6 +214,7 @@ function DocumentsSection({ data, reload }: { data: CaseDetailT; reload: () => v
   function docActions(d: CaseDetailT['documents'][number]): CtxAction[] {
     const url = documentPdfUrl(data.id, d.id);
     return [
+      { label: 'Preview', icon: 'eye', onSelect: () => openPreview(d) },
       { label: 'Download', icon: 'download', onSelect: () => downloadPdf(url) },
       { label: 'Print', icon: 'printer', onSelect: () => { void printPdf(url); } },
       {
@@ -220,7 +232,7 @@ function DocumentsSection({ data, reload }: { data: CaseDetailT; reload: () => v
   }
 
   return (
-    <section className="dashsection">
+    <section className="dashsection" id="documents">
       <h2>Documents</h2>
       {notice && <p className="finder-notice" role="status">{notice}</p>}
       {data.documents.length === 0 && (
@@ -233,7 +245,7 @@ function DocumentsSection({ data, reload }: { data: CaseDetailT; reload: () => v
         <ul className="doclist">
           {data.documents.map((d) => (
             <li key={d.id}>
-              <ContextMenu actions={docActions(d)} menuLabel={`Menu for ${d.label || d.motionName}`} className="filerow">
+              <ContextMenu actions={docActions(d)} menuLabel={`Menu for ${d.label || d.motionName}`} className="filerow" onOpen={() => openPreview(d)}>
                 <span className="fileicon" aria-hidden="true"><Icon name="doc" size={24} /></span>
                 <span className="filetexts">
                   <strong>{d.label || d.motionName}</strong>
@@ -248,11 +260,12 @@ function DocumentsSection({ data, reload }: { data: CaseDetailT; reload: () => v
       )}
       {data.documents.length > 0 && (
         <p className="fineprint">
-          Re-downloads are regenerated from your saved answers. Your drawn signature is not
+          Tap a document to preview it. Re-downloads are regenerated from your saved answers. Your drawn signature is not
           stored, so a regenerated copy has a blank signature line — sign the printed copy the
           way you signed the original.
         </p>
       )}
+      {preview && <DocPreview target={preview} onClose={() => setPreview(null)} />}
       {renaming && (
         <Modal title="Rename document" onClose={() => setRenaming(null)}>
           <div className="field">
@@ -356,7 +369,7 @@ function DeadlinesSection({
   }
 
   return (
-    <section className="dashsection">
+    <section className="dashsection" id="deadlines">
       <h2>Deadlines</h2>
       {data.deadlines.length === 0 && <p>No deadlines tracked yet.</p>}
       <ul className="deadlinelist">
@@ -464,7 +477,7 @@ function AppearanceSection({
   }
 
   return (
-    <section className="dashsection">
+    <section className="dashsection" id="hearing">
       <h2>Hearing &amp; remote appearance</h2>
       {remoteStatus !== 'granted' && (
         <p className="warn">
@@ -621,7 +634,7 @@ function CommsSection({
   }
 
   return (
-    <section className="dashsection">
+    <section className="dashsection" id="comms">
       <h2>Communication with the court</h2>
       <p className="fineprint">
         A log of everything sent and received — the originals move through the court’s own

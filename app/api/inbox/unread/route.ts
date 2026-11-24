@@ -1,6 +1,7 @@
 // GET /api/inbox/unread — a lightweight poll target for the
 // in-app new-mail toast: the signed-in user's newest inbound
-// message (id + arrival + sender only) and the unreviewed count.
+// message (id + arrival + sender only), the unreviewed count, and
+// the unread count that drives the new-mail badges.
 // No subjects, no bodies, no facts — the toast names the sender
 // and nothing else, and the full queue lives behind /dashboard/inbox.
 
@@ -25,19 +26,24 @@ export async function GET(req: NextRequest) {
       }>(
         `SELECT id, received_at, from_name, from_email
          FROM inbound_messages
-         WHERE user_id = $1
+         WHERE user_id = $1 AND deleted_at IS NULL
          ORDER BY received_at DESC, created_at DESC, id DESC
          LIMIT 1`,
         [auth.user.id],
       ),
       query<{ n: string }>(
         `SELECT count(*) AS n FROM inbound_messages m
-         WHERE m.user_id = $1 AND m.status NOT IN ('filed','dismissed') AND EXISTS (
+         WHERE m.user_id = $1 AND m.deleted_at IS NULL AND m.status NOT IN ('filed','dismissed') AND EXISTS (
            SELECT 1 FROM extracted_facts f WHERE f.message_id = m.id AND f.status = 'proposed'
          )`,
         [auth.user.id],
       ),
     ]);
+    const unreadRows = await query<{ n: string }>(
+      `SELECT count(*) AS n FROM inbound_messages
+       WHERE user_id = $1 AND read_at IS NULL AND deleted_at IS NULL AND archived_at IS NULL`,
+      [auth.user.id],
+    );
     const row = latest[0];
     return NextResponse.json({
       latest: row
@@ -49,6 +55,7 @@ export async function GET(req: NextRequest) {
           }
         : null,
       unreviewed: Number(cnt[0]?.n) || 0,
+      unread: Number(unreadRows[0]?.n) || 0,
     });
   } catch {
     return dbUnavailable();
