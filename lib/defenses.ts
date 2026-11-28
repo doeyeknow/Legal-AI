@@ -3,10 +3,11 @@
 // deadline that usually applies, and where the rule comes from.
 //
 // Client-safe static data (no server imports), like lib/motions.
-// General legal information, NOT legal advice. Arizona rules are used
-// for the specific deadlines because that is where most users are;
-// the U.S. Constitution parts apply in every state. Every entry tells
-// the reader to confirm with a lawyer or public defender.
+// General legal information, NOT legal advice. U.S. constitutional
+// protections apply in every state; deadlines, procedures, and many
+// defenses vary by state, so state-specific items say to check the
+// reader's own court rules. Every entry tells the reader to confirm
+// with a lawyer or public defender.
 
 export type ChargeKind =
   | 'dui' | 'traffic' | 'drugs' | 'theft' | 'assault' | 'dv' | 'weapons'
@@ -80,45 +81,30 @@ export interface DefenseDef {
 // Sources (official text wherever possible)
 // ------------------------------------------------------------------
 const S = {
-  r8: { label: 'Ariz. R. Crim. P. 8.2 (speedy trial time limits)', url: 'https://govt.westlaw.com/azrules/Document/NB5DA83B0D63D11DFBEA8ABF3F81D86F7?contextData=(sc.Default)' },
-  r8std: { label: 'Arizona courts — felony case time standards', url: 'https://www.azcourts.gov/Portals/0/27/TimeStandards/Criminal%20Felony_9.4.2025.pdf' },
-  leota: { label: 'State v. Leota (Ariz. App. 2023) — Rule 8 dismissal', url: 'https://law.justia.com/cases/arizona/court-of-appeals-division-one-published/2023/1-ca-cr-22-0463.html' },
-  earl: { label: 'Earl v. Garcia (Ariz. App. 2014)', url: 'https://law.justia.com/cases/arizona/court-of-appeals-division-one-published/2014/1-ca-sa-13-0096.html' },
+  sixth: { label: 'U.S. Constitution, Sixth Amendment — speedy trial, notice, and counsel', url: 'https://constitution.congress.gov/constitution/amendment-6/' },
+  fourth: { label: 'U.S. Constitution, Fourth Amendment — searches and seizures', url: 'https://constitution.congress.gov/constitution/amendment-4/' },
+  fifth: { label: 'U.S. Constitution, Fifth Amendment — self-incrimination and grand jury', url: 'https://constitution.congress.gov/constitution/amendment-5/' },
+  fourteenth: { label: 'U.S. Constitution, Fourteenth Amendment — due process', url: 'https://constitution.congress.gov/constitution/amendment-14/' },
+  stateCourts: { label: 'State court websites directory — find your court, rules, and clerk', url: 'https://www.ncsc.org/information-and-resources/state-court-websites' },
+  limitations: { label: 'Statutes of limitation — general background', url: 'https://www.law.cornell.edu/wex/statute_of_limitations' },
+  selfdef: { label: 'Self-defense — general background', url: 'https://www.law.cornell.edu/wex/self-defense' },
+  entrap: { label: 'Entrapment — general background', url: 'https://www.law.cornell.edu/wex/entrapment' },
+  corpus: { label: 'Corpus delicti — general background', url: 'https://www.law.cornell.edu/wex/corpus_delicti' },
   barker: { label: 'Barker v. Wingo, 407 U.S. 514 (1972)', url: 'https://supreme.justia.com/cases/federal/us/407/514/' },
-  r16_1: { label: 'Ariz. R. Crim. P. 16.1 (motion deadlines)', url: 'https://govt.westlaw.com/azrules/Document/N4B0E61D0964011DDADEEDA047AE49A4B?viewType=FullText&originationContext=documenttoc&transitionType=DocumentItem&contextData=(sc.Default)' },
-  r16_4: { label: 'Ariz. R. Crim. P. 16.4 (dismissal of prosecution)', url: 'https://govt.westlaw.com/azrules/Document/NDB124A20C3D611EDBD9AA7CEA13B46A5?contextData=(sc.Default)' },
-  r15_2: { label: 'Ariz. R. Crim. P. 15.2 (defendant’s notice of defenses)', url: 'https://govt.westlaw.com/azrules/Document/N09210A40717A11DAA16E8D4AC7636430?contextData=' },
-  r15_7: { label: 'Ariz. R. Crim. P. 15.7 (disclosure sanctions)', url: 'https://govt.westlaw.com/azrules/Document/N0C3E9DF0717A11DAA16E8D4AC7636430?viewType=FullText' },
-  r12_9: { label: 'Ariz. R. Crim. P. 12.9 (challenging grand jury proceedings)', url: 'https://content.next.westlaw.com/Document/NFBFCA130717911DAA16E8D4AC7636430/View/FullText.html?transitionType=Default&contextData=(sc.Default)' },
-  gj: { label: 'Grand jury vs. preliminary hearing in Arizona', url: 'https://futurefirst.law/grand-jury-vs-preliminary-hearing-arizona/' },
-  sol: { label: 'A.R.S. § 13-107 (time limits to prosecute)', url: 'https://www.azleg.gov/ars/13/00107.htm' },
-  just: { label: 'A.R.S. § 13-205 (justification; burden of proof)', url: 'https://www.azleg.gov/ars/13/00205.htm' },
-  selfdef: { label: 'A.R.S. § 13-404 (self-defense)', url: 'https://www.azleg.gov/ars/13/00404.htm' },
-  entrap: { label: 'A.R.S. § 13-206 (entrapment)', url: 'https://www.azleg.gov/ars/13/00206.htm' },
-  divert: { label: 'A.R.S. § 11-361 (county diversion programs)', url: 'https://www.azleg.gov/ars/11/00361.htm' },
-  mcao: { label: 'Maricopa County Attorney — diversion programs', url: 'https://maricopacountyattorney.org/303/Diversion-Programs' },
-  apaac: { label: 'APAAC deferred prosecution guidelines', url: 'https://apaac.az.gov/deferred-prosecution-reports-and-guidelines/deferred-prosecution-guidelines?download=1083:deferred-prosecution-guidelines' },
-  compromise: { label: 'State v. Larson — misdemeanor compromise (A.R.S. § 13-3981)', url: 'https://www.courtlistener.com/opinion/1161838/state-v-larson/' },
-  tucson: { label: 'Tucson City Prosecutor — victim FAQ (compromise)', url: 'https://www.tucsonaz.gov/Departments/Prosecutor/Victim-Information-Center/Victim-Information-FAQs' },
-  incomp: { label: 'A.R.S. § 13-4504 (incompetency; misdemeanor dismissal)', url: 'https://www.azleg.gov/ars/13/04504.htm' },
-  mj: { label: 'A.R.S. § 36-2852 (adult marijuana possession)', url: 'https://www.azleg.gov/ars/36/02852.htm' },
-  mcnutt: { label: 'McNutt v. Superior Court, 133 Ariz. 7 (1982)', url: 'https://www.courtlistener.com/opinion/1184980/mcnutt-v-superior-court-of-state-of-ariz/' },
-  holland: { label: 'State v. Holland (Ariz. 1985)', url: 'https://supreme.justia.com/cases/arizona/supreme-court/1985/6637-pr-2.html' },
-  glissendorf: { label: 'State v. Glissendorf (Ariz. 2015) — Willits instruction', url: 'https://www.azcourts.gov/Portals/0/OpinionFiles/Supreme/2014/CR130388PR.pdf' },
-  youngbloodAz: { label: 'State v. Youngblood (Ariz. 1993) — lost evidence', url: 'https://www.courtlistener.com/opinion/1249167/state-v-youngblood/' },
-  corpus: { label: 'State v. Flores (Ariz. App.) — corpus delicti', url: 'https://courtlistener.com/opinion/2639315/state-v-flores/' },
-  hernandez: { label: 'State v. Hernandez (Ariz. 1958) — corpus delicti', url: 'http://supreme.justia.com/cases/arizona/supreme-court/1958/1106-0.html' },
+  trombetta: { label: 'California v. Trombetta, 467 U.S. 479 (1984)', url: 'https://supreme.justia.com/cases/federal/us/467/479/' },
+  dusky: { label: 'Dusky v. United States, 362 U.S. 402 (1960)', url: 'https://supreme.justia.com/cases/federal/us/362/402/' },
+  winship: { label: 'In re Winship, 397 U.S. 358 (1970)', url: 'https://supreme.justia.com/cases/federal/us/397/358/' },
   terry: { label: 'Terry v. Ohio, 392 U.S. 1 (1968)', url: 'https://supreme.justia.com/cases/federal/us/392/1/' },
   rodriguez: { label: 'Rodriguez v. United States, 575 U.S. 348 (2015)', url: 'https://supreme.justia.com/cases/federal/us/575/348/' },
   mapp: { label: 'Mapp v. Ohio, 367 U.S. 643 (1961)', url: 'https://supreme.justia.com/cases/federal/us/367/643/' },
-  gant: { label: 'Arizona v. Gant, 556 U.S. 332 (2009)', url: 'https://supreme.justia.com/cases/federal/us/556/332/' },
+  gant: { label: 'Gant, 556 U.S. 332 (2009) — vehicle searches after arrest', url: 'https://supreme.justia.com/cases/federal/us/556/332/' },
   riley: { label: 'Riley v. California, 573 U.S. 373 (2014)', url: 'https://supreme.justia.com/cases/federal/us/573/373/' },
   franks: { label: 'Franks v. Delaware, 438 U.S. 154 (1978)', url: 'https://supreme.justia.com/cases/federal/us/438/154/' },
-  miranda: { label: 'Miranda v. Arizona, 384 U.S. 436 (1966)', url: 'https://supreme.justia.com/cases/federal/us/384/436/' },
-  edwards: { label: 'Edwards v. Arizona, 451 U.S. 477 (1981)', url: 'https://supreme.justia.com/cases/federal/us/451/477/' },
+  miranda: { label: 'Miranda warnings, 384 U.S. 436 (1966)', url: 'https://supreme.justia.com/cases/federal/us/384/436/' },
+  edwards: { label: 'Edwards, 451 U.S. 477 (1981) — questioning after asking for counsel', url: 'https://supreme.justia.com/cases/federal/us/451/477/' },
   manson: { label: 'Manson v. Brathwaite, 432 U.S. 98 (1977)', url: 'https://supreme.justia.com/cases/federal/us/432/98/' },
   brady: { label: 'Brady v. Maryland, 373 U.S. 83 (1963)', url: 'https://supreme.justia.com/cases/federal/us/373/83/' },
-  youngblood: { label: 'Arizona v. Youngblood, 488 U.S. 51 (1988)', url: 'https://supreme.justia.com/cases/federal/us/488/51/' },
+  youngblood: { label: 'Youngblood, 488 U.S. 51 (1988) — lost evidence and bad faith', url: 'https://supreme.justia.com/cases/federal/us/488/51/' },
   mcneely: { label: 'Missouri v. McNeely, 569 U.S. 141 (2013)', url: 'https://supreme.justia.com/cases/federal/us/569/141/' },
   birchfield: { label: 'Birchfield v. North Dakota, 579 U.S. 438 (2016)', url: 'https://supreme.justia.com/cases/federal/us/579/438/' },
   gideon: { label: 'Gideon v. Wainwright, 372 U.S. 335 (1963)', url: 'https://supreme.justia.com/cases/federal/us/372/335/' },
@@ -127,7 +113,7 @@ const S = {
 };
 
 export const DEFENSE_DISCLAIMER =
-  'General legal information, not legal advice. These are real, commonly used ways charges get dismissed or reduced, but whether one fits depends on facts a lawyer needs to see. If you cannot afford a lawyer, ask the court for a public defender at your first appearance — it is your right, and these are exactly the issues they look for.';
+  'General legal information, not legal advice. Constitutional protections apply nationwide, but deadlines, procedures, diversion, expungement, and many defenses vary by state. These are real, commonly used ways charges get dismissed or reduced, but whether one fits depends on facts a lawyer needs to see. If you cannot afford a lawyer, ask the court for a public defender at your first appearance — it is your right, and these are exactly the issues they look for.';
 
 // ------------------------------------------------------------------
 // The database
@@ -152,7 +138,7 @@ export const DEFENSES: DefenseDef[] = [
       'File a motion to suppress evidence that names what should be thrown out and why the stop was not justified.',
       'Ask for an evidentiary hearing so the officer has to testify about the reason for the stop.',
     ],
-    timing: 'In Arizona, motions must be filed at least 20 days before trial (Rule 16.1(b)); a late motion can be refused. File as soon as you have the video and report.',
+    timing: 'Your state’s motion deadline controls — many courts require pretrial motions weeks before trial, and late motions can be refused. Check your court’s rules or ask the clerk, and file as soon as you have the video and report.',
     evidence: ['Dash-cam and body-cam footage', 'CAD / dispatch logs and the 911 call if there was one', 'Photos of the location, signs, and lane markings', 'Names of passengers or witnesses'],
     limits: [
       'Any real traffic violation, even a minor one, is usually enough to justify a car stop.',
@@ -160,7 +146,7 @@ export const DEFENSES: DefenseDef[] = [
     ],
     charges: 'all',
     motionIds: ['suppress-evidence', 'dismiss-charges'],
-    sources: [S.terry, S.mapp, S.r16_1],
+    sources: [S.terry, S.mapp, S.fourth],
   },
   {
     id: 'prolonged-stop',
@@ -179,12 +165,12 @@ export const DEFENSES: DefenseDef[] = [
       'Build a short timeline: stop began, license run, ticket written, dog called, dog arrived, search.',
       'Raise it in a motion to suppress evidence, citing Rodriguez.',
     ],
-    timing: 'Same as other suppression motions — in Arizona, at least 20 days before trial.',
+    timing: 'Same as other suppression motions: your state’s pretrial-motion deadline controls, so check your court’s rules and file early.',
     evidence: ['Body-cam timestamps', 'Dispatch / CAD log with call times', 'The citation and its time stamp', 'K-9 unit log'],
     limits: ['If the officer saw or smelled something new early in the stop, extra time may be allowed.'],
     charges: 'all',
     motionIds: ['suppress-evidence'],
-    sources: [S.rodriguez, S.r16_1],
+    sources: [S.rodriguez],
   },
   {
     id: 'illegal-search',
@@ -192,7 +178,7 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Police stop and search',
     outcome: 'Evidence from the search can be thrown out',
     summary:
-      'Searches of your home, car, phone, bag, or body generally need a warrant, real consent, or a recognized exception. Phones need a warrant even after an arrest (Riley v. California). A car cannot be searched just because you were arrested unless you could reach it or evidence of that crime is likely inside (Arizona v. Gant). If police went outside those lines, what they found can be suppressed.',
+      'Searches of your home, car, phone, bag, or body generally need a warrant, real consent, or a recognized exception. Phones need a warrant even after an arrest (Riley v. California). A car cannot be searched just because you were arrested unless you could reach it or evidence of that crime is likely inside (Gant). If police went outside those lines, what they found can be suppressed.',
     whenItApplies: [
       'You said no, or were never asked, and they searched anyway.',
       'Your “consent” came after threats, or while you were surrounded and told you had no choice.',
@@ -206,7 +192,7 @@ export const DEFENSES: DefenseDef[] = [
       'File a motion to suppress evidence identifying each item to exclude.',
       'If the affidavit has false statements made knowingly or recklessly, ask for a Franks hearing.',
     ],
-    timing: 'In Arizona, at least 20 days before trial (Rule 16.1(b)). Earlier is better.',
+    timing: 'Your state’s pretrial-motion deadline controls; check your court’s rules or ask the clerk. Earlier is better.',
     evidence: ['The search warrant and affidavit', 'Body-cam of the consent conversation', 'Property / evidence inventory', 'Who owns or uses the place searched'],
     limits: [
       'You can generally only challenge a search of a place or thing that was yours or where you had privacy (not a stranger’s car).',
@@ -224,7 +210,7 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Statements and questioning',
     outcome: 'Your statements are kept out of the State’s main case',
     summary:
-      'If you were in custody (arrested or not free to leave) and police questioned you without first giving Miranda warnings, the State generally cannot use what you said to prove its case. If you asked for a lawyer and they kept questioning you, statements after that point are also excluded (Edwards v. Arizona).',
+      'If you were in custody (arrested or not free to leave) and police questioned you without first giving Miranda warnings, the State generally cannot use what you said to prove its case. If you asked for a lawyer and they kept questioning you, statements after that point are also excluded (Edwards).',
     whenItApplies: [
       'You were in handcuffs, a patrol car, or an interview room and were asked questions about the crime before hearing your rights.',
       'You said “I want a lawyer” and the questions kept coming.',
@@ -235,7 +221,7 @@ export const DEFENSES: DefenseDef[] = [
       'Note when you were first restrained and when, if ever, warnings were read.',
       'File a motion to suppress statement / confession; ask for a voluntariness hearing.',
     ],
-    timing: 'In Arizona, at least 20 days before trial.',
+    timing: 'Your state’s pretrial-motion deadline controls; check your court’s rules or ask the clerk and file early.',
     evidence: ['Interview and body-cam recordings', 'Any signed rights-waiver form', 'Times of arrest and of questioning'],
     limits: [
       'Not reading you your rights does NOT get the whole case dismissed — it only removes the statements.',
@@ -244,7 +230,7 @@ export const DEFENSES: DefenseDef[] = [
     ],
     charges: 'all',
     motionIds: ['suppress-statement'],
-    sources: [S.miranda, S.edwards, S.r16_1],
+    sources: [S.miranda, S.edwards, S.fifth],
   },
   {
     id: 'involuntary-statement',
@@ -252,7 +238,7 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Statements and questioning',
     outcome: 'The confession is thrown out entirely',
     summary:
-      'A statement obtained by threats, promises of leniency, or pressure that overcame your will cannot be used at all — even with Miranda warnings. Arizona requires the State to prove a statement was voluntary before it is admitted.',
+      'A statement obtained by threats, promises of leniency, or pressure that overcame your will cannot be used at all — even with Miranda warnings. Courts generally require the prosecution to prove a statement was voluntary before it is admitted.',
     whenItApplies: [
       'You were told you would go home, avoid jail, or keep your kids if you confessed.',
       'You were threatened, denied food, sleep, or medication, or held for many hours.',
@@ -263,12 +249,12 @@ export const DEFENSES: DefenseDef[] = [
       'Get the full recording; length and tone matter.',
       'File a motion to suppress statement / confession and request a voluntariness hearing.',
     ],
-    timing: 'In Arizona, at least 20 days before trial.',
+    timing: 'Your state’s pretrial-motion deadline controls; check your court’s rules or ask the clerk and file early.',
     evidence: ['Full interview recordings', 'Medical or jail records showing your condition', 'Interpreter records'],
     limits: ['Ordinary police pressure and lying about evidence are often allowed; courts look at the whole picture.'],
     charges: 'all',
     motionIds: ['suppress-statement'],
-    sources: [S.miranda, S.r16_1],
+    sources: [S.miranda, S.fifth],
   },
   {
     id: 'corpus-delicti',
@@ -276,7 +262,7 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Statements and questioning',
     outcome: 'Statement excluded and charge can fail for lack of proof',
     summary:
-      'Arizona follows the corpus delicti rule: you cannot be convicted on your own uncorroborated confession. The State must first show independent evidence that the crime actually happened. When police have an admission but nothing else, this can knock out the statement and the charge with it.',
+      'Many states follow a corpus delicti rule: you cannot be convicted on your own uncorroborated confession alone. The prosecution must first show independent evidence that the crime actually happened. The exact form varies by state, but when police have an admission and little else, this can knock out the statement and the charge with it.',
     whenItApplies: [
       'Nothing was found, no one saw it, and the case is built on what you told police.',
       'You admitted to a more serious version (for example, “for sale”) but the physical evidence only shows something smaller.',
@@ -285,12 +271,12 @@ export const DEFENSES: DefenseDef[] = [
       'Ask what independent evidence the State has besides your statement (disclosure).',
       'Object to the statement before trial in a motion in limine; at trial, move for a judgment of acquittal if the corroboration is missing.',
     ],
-    timing: 'Raise before trial in a motion; again at trial under Rule 20 after the State rests.',
+    timing: 'Raise before trial in a motion; again at trial after the prosecution rests, under your state’s judgment-of-acquittal procedure.',
     evidence: ['The police report — list what is NOT in it', 'Lab results (or the lack of them)'],
     limits: ['Only a reasonable inference of the crime is needed; small corroborating facts are often enough. It does not apply to a guilty plea.'],
     charges: 'all',
     motionIds: ['in-limine', 'judgment-of-acquittal'],
-    sources: [S.hernandez, S.corpus],
+    sources: [S.corpus, S.stateCourts],
   },
 
   // ---------------- Evidence and disclosure ----------------
@@ -312,12 +298,12 @@ export const DEFENSES: DefenseDef[] = [
       'Compare the witness’s first description with what you actually look like.',
       'File a motion to suppress identification and request a hearing.',
     ],
-    timing: 'In Arizona, at least 20 days before trial.',
+    timing: 'Your state’s pretrial-motion deadline controls; check your court’s rules or ask the clerk and file early.',
     evidence: ['Photo array and lineup instructions', 'The 911 call and first description', 'Lighting, distance, and time of the event'],
     limits: ['Courts often let even suggestive IDs in if other factors make them reliable; the fight then moves to cross-examination.'],
     charges: 'all',
     motionIds: ['suppress-identification'],
-    sources: [S.manson, S.r16_1],
+    sources: [S.manson],
   },
   {
     id: 'disclosure-violation',
@@ -325,7 +311,7 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Evidence and disclosure',
     outcome: 'Evidence can be blocked; serious or repeated violations can lead to dismissal',
     summary:
-      'The State must give you the police reports, recordings, witness lists, lab results, and anything that helps you (Brady material). In Arizona, the court can sanction a violation by blocking the evidence, granting a continuance, or in serious cases dismissing the case, with or without prejudice (Rule 15.7).',
+      'The State must give you the police reports, recordings, witness lists, lab results, and anything that helps you (Brady material). Courts can sanction a violation by blocking the evidence, granting a continuance, or in serious cases dismissing the case; the available sanctions and dismissal rules vary by state.',
     whenItApplies: [
       'You have asked for body-cam, reports, or lab results and have not received them.',
       'Trial is approaching and the State keeps saying disclosure is “pending.”',
@@ -335,14 +321,14 @@ export const DEFENSES: DefenseDef[] = [
       'Send a written disclosure request listing exactly what you want; keep a copy and the date.',
       'If it is not provided, file a motion to compel discovery.',
       'For evidence that helps you, file a Brady motion.',
-      'If the deadline passes and it still is not produced, ask for sanctions under Rule 15.7 — preclusion or dismissal.',
+      'If the deadline passes and it still is not produced, ask for sanctions under your state’s discovery rules — such as blocking the late evidence or, in serious cases, dismissal.',
     ],
     timing: 'Ask in writing right after arraignment. A sanctions motion should be filed promptly once the violation is clear.',
     evidence: ['Copies of every request and every reply', 'A log of what has and has not been produced'],
     limits: ['Courts usually start with lesser sanctions; dismissal is reserved for serious, prejudicial, or bad-faith violations.'],
     charges: 'all',
     motionIds: ['criminal-discovery', 'brady-motion'],
-    sources: [S.r15_7, S.brady],
+    sources: [S.brady, S.fourteenth],
   },
   {
     id: 'lost-evidence',
@@ -350,7 +336,7 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Evidence and disclosure',
     outcome: 'Jury instruction against the State; dismissal if done in bad faith',
     summary:
-      'If police or prosecutors lost or destroyed evidence that could have helped you — body-cam footage not saved, a 911 call overwritten, a blood sample discarded — you can ask for a Willits instruction, which tells the jury it may assume the missing evidence would have hurt the State. If it was destroyed in bad faith, or the loss makes a fair trial impossible, the charge can be dismissed.',
+      'If police or prosecutors lost or destroyed evidence that could have helped you — body-cam footage not saved, a 911 call overwritten, a blood sample discarded — you can ask for a missing-evidence instruction, which tells the jury it may assume the missing evidence would have hurt the prosecution. If it was destroyed in bad faith, or the loss makes a fair trial impossible, the charge can be dismissed.',
     whenItApplies: [
       'Store or body-cam video “was not retained.”',
       'A sample, photo, or object was never tested and is now gone.',
@@ -359,14 +345,14 @@ export const DEFENSES: DefenseDef[] = [
     howToRaise: [
       'Send a preservation letter immediately for any video or recording you know about.',
       'Document when and how you learned it was lost.',
-      'File a motion in limine asking for a Willits instruction; if there is evidence of bad faith, a motion to dismiss.',
+      'File a motion in limine asking for a missing-evidence instruction; if there is evidence of bad faith, a motion to dismiss.',
     ],
     timing: 'Preservation: today. Motion: before trial, as soon as the loss is known.',
     evidence: ['Your preservation request', 'Retention policies of the agency or store', 'Any reply saying the item is gone'],
-    limits: ['Without bad faith, the usual remedy is the instruction, not dismissal.'],
+    limits: ['Without bad faith, the usual remedy is an instruction or another lesser sanction, not dismissal; the exact remedy varies by state.'],
     charges: 'all',
     motionIds: ['in-limine', 'dismiss-charges'],
-    sources: [S.glissendorf, S.youngbloodAz, S.youngblood],
+    sources: [S.trombetta, S.youngblood],
   },
   {
     id: 'informant',
@@ -392,7 +378,7 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Deadlines and delay',
     outcome: 'Dismissal — sometimes with prejudice, meaning the charge cannot be refiled',
     summary:
-      'Arizona Rule 8.2 requires trial within 150 days of arraignment if you are in custody, 180 days if you are out of custody, and 270 days for complex cases. Some time does not count (continuances you asked for, competency proceedings, your absence). If the time runs out, the court must dismiss. Dismissal with prejudice requires showing the delay actually hurt your defense. Separately, the U.S. Constitution forbids unreasonable delay (Barker v. Wingo).',
+      'Every state must honor the constitutional right to a speedy trial, and many states also set specific day-count deadlines. Those clocks vary: they may run from arrest, charge, or arraignment, differ for people in custody, and exclude delays you requested or agreed to. If your state’s deadline runs out, dismissal may be required; whether it is with prejudice depends on state law and whether the delay hurt your defense. Separately, the U.S. Constitution forbids unreasonable delay (Barker v. Wingo).',
     whenItApplies: [
       'It has been many months since arraignment and trial keeps getting moved by the State or the court.',
       'You did not ask for, or did not agree to, the continuances.',
@@ -401,17 +387,17 @@ export const DEFENSES: DefenseDef[] = [
     howToRaise: [
       'Add up the days since arraignment; subtract periods you caused or agreed to.',
       'Object on the record every time the State asks for a continuance.',
-      'File a motion to dismiss citing Rule 8; if the delay harmed your defense, ask for dismissal with prejudice and explain how.',
+      'File a motion to dismiss citing your state’s speedy-trial rule and the Sixth Amendment; if the delay harmed your defense, ask for dismissal with prejudice and explain how.',
     ],
     timing: 'Raise it before trial begins and before the deadline is waived. Do not sign a time waiver without understanding it.',
     evidence: ['Every minute entry and continuance order', 'Who asked for each delay', 'Proof of harm: lost witnesses, faded memory, lost job or custody while held'],
     limits: [
       'Delays you request or agree to are excluded and usually restart or extend the clock.',
-      'Most Rule 8 dismissals are without prejudice — the State may refile.',
+      'Some speedy-trial dismissals are without prejudice, so the prosecution may refile if state law allows; check whether dismissal with prejudice is available.',
     ],
     charges: 'all',
     motionIds: ['dismiss-charges'],
-    sources: [S.r8, S.r8std, S.leota, S.earl, S.barker],
+    sources: [S.barker, S.sixth, S.stateCourts],
   },
   {
     id: 'statute-of-limitations',
@@ -419,9 +405,9 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Deadlines and delay',
     outcome: 'Dismissal with prejudice',
     summary:
-      'In Arizona, prosecution must start within 7 years for most felonies (class 2–6), 1 year for misdemeanors, and 6 months for petty offenses. The clock runs from when the State discovered, or should have discovered, the offense. Homicide and some serious crimes have no limit. If the State filed too late, the case must be dismissed and cannot be refiled.',
+      'Each state sets its own time limits for starting a prosecution, and they vary by offense level and type. Many states use shorter periods for misdemeanors and longer periods for felonies, and some serious crimes have no limit. The clock may run from the offense or from when it was discovered, depending on state law. If the prosecution filed after your state’s deadline, the case must be dismissed and generally cannot be refiled.',
     whenItApplies: [
-      'The event happened long before you were charged — especially a misdemeanor more than a year old.',
+      'The event happened long before you were charged.',
       'Police knew about it right away but waited to file.',
     ],
     howToRaise: [
@@ -431,10 +417,10 @@ export const DEFENSES: DefenseDef[] = [
     ],
     timing: 'File early. It can be raised by motion before trial.',
     evidence: ['The complaint or indictment with its filing date', 'The original police report date', 'Anything showing police knew earlier'],
-    limits: ['Time you spent outside Arizona or hiding your identity may pause the clock.', 'No limit applies to homicide, many sex offenses against children, and certain other crimes.'],
+    limits: ['Time spent outside the state, hiding your identity, or other tolling events may pause the clock under state law.', 'No limit applies to homicide, many sex offenses against children, and certain other crimes.'],
     charges: 'all',
     motionIds: ['dismiss-charges'],
-    sources: [S.sol],
+    sources: [S.limitations, S.stateCourts],
   },
 
   // ---------------- Charging and court process ----------------
@@ -444,7 +430,7 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Charging and court process',
     outcome: 'Dismissal (usually without prejudice)',
     summary:
-      'Under Arizona Rule 16.4(b), the court must dismiss when the complaint, information, or indictment is insufficient as a matter of law — for example, the facts it alleges are not actually a crime, it cites a statute that does not apply, or it fails to tell you what you did.',
+      'In every state, the charging document must state a real offense and give you fair notice of what you are accused of. Courts can dismiss when the complaint, information, or indictment is legally insufficient — for example, the facts it alleges are not actually a crime, it cites a law that does not apply, or it fails to tell you what you did. The exact motion and standard are set by your state’s rules.',
     whenItApplies: [
       'The complaint cites the wrong statute, or a statute that was repealed.',
       'It leaves out a required element (for example, theft with no value alleged when value sets the level).',
@@ -452,17 +438,17 @@ export const DEFENSES: DefenseDef[] = [
     ],
     howToRaise: [
       'Read the charge line by line next to the statute and the elements in the Charge Library.',
-      'File a motion to dismiss under Rule 16.4(b), explaining what is missing.',
+      'File a motion to dismiss for a legally defective charging document, explaining what is missing.',
     ],
-    timing: 'In Arizona, at least 20 days before trial (Rule 16.1(b)).',
+    timing: 'Your state’s pretrial-motion deadline controls; check your court’s rules or ask the clerk and file early.',
     evidence: ['The complaint or indictment', 'The statute text'],
     limits: [
-      'This is not a way to argue the State’s evidence is weak — Rule 16.4 does not let the judge weigh evidence before trial.',
+      'This is not a way to argue the State’s evidence is weak — a defective-charge motion does not let the judge weigh evidence before trial.',
       'The State can often fix the document by amending it or refiling.',
     ],
     charges: 'all',
     motionIds: ['dismiss-charges'],
-    sources: [S.r16_4, S.r16_1],
+    sources: [S.sixth, S.stateCourts],
   },
   {
     id: 'grand-jury',
@@ -470,19 +456,19 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Charging and court process',
     outcome: 'Indictment sent back for a new probable-cause finding',
     summary:
-      'If a felony indictment came from a grand jury that was given misleading or incomplete information — for example, it was not told about clearly exculpatory evidence, or was given wrong law — you can ask the court to remand for a new finding of probable cause under Rule 12.9. Sometimes the State does not re-indict.',
+      'If a felony indictment came from a grand jury that was given misleading or incomplete information — for example, it was not told about clearly exculpatory evidence, or was given wrong law — you can ask the court to challenge the indictment or send it back for a new probable-cause finding. The procedure and deadline are set by state law, and some states use preliminary hearings instead. Sometimes the prosecution does not re-indict.',
     whenItApplies: ['You were indicted by a grand jury (not a preliminary hearing).', 'The transcript shows the officer misstated facts or left out something important that helps you.'],
     howToRaise: [
       'Get the grand jury transcript (it is filed with the court).',
       'Compare the testimony with the police report and the video.',
       'File a motion for a new finding of probable cause.',
     ],
-    timing: 'Strict: within 45 days after the transcript is filed or after arraignment, whichever is later. Late motions are barred.',
+    timing: 'Strict in many states: challenge deadlines can be short and may run from arraignment or from when the transcript is filed. Check your state’s deadline immediately; late motions may be barred.',
     evidence: ['Grand jury transcript', 'Police report and recordings to compare'],
-    limits: ['A remand is not a dismissal — the State can present the case again.', 'The deadline is mandatory.'],
+    limits: ['A remand is not a dismissal — the State can present the case again.', 'The deadline may be mandatory, so do not wait.'],
     charges: 'all',
     motionIds: ['dismiss-charges'],
-    sources: [S.r12_9, S.gj],
+    sources: [S.fifth, S.stateCourts],
   },
   {
     id: 'double-jeopardy',
@@ -508,19 +494,19 @@ export const DEFENSES: DefenseDef[] = [
     category: 'The facts of the charge',
     outcome: 'Acquittal, or dismissal once the prosecutor sees the proof',
     summary:
-      'If you were somewhere else, or the description fits someone else, proof of that is often the fastest way to a dismissal — prosecutors frequently drop cases when shown solid alibi evidence early. In Arizona you must give written notice of an alibi or mistaken-identity defense (Rule 15.2).',
+      'If you were somewhere else, or the description fits someone else, proof of that is often the fastest way to a dismissal — prosecutors frequently drop cases when shown solid alibi evidence early. Many states require written notice of an alibi or mistaken-identity defense, so check your state’s notice rule.',
     whenItApplies: ['You were at work, home, or elsewhere and can prove it.', 'The suspect description does not match you.', 'Someone else had your car, phone, or ID.'],
     howToRaise: [
       'Collect proof now: time cards, receipts, phone location history, texts, video, witnesses.',
       'File your notice of defenses listing alibi or mistaken identity, with witnesses.',
       'Share the proof with the prosecutor and ask them to dismiss.',
     ],
-    timing: 'Arizona superior court: notice within 40 days after arraignment or 10 days after the State’s disclosure, whichever is first. Limited jurisdiction courts: 20 days after the State’s disclosure.',
+    timing: 'Your state’s notice deadline controls. Alibi-notice deadlines are often short and may run from arraignment or from the prosecution’s disclosure; ask the clerk or check the court’s rules right away.',
     evidence: ['Time-stamped records (cards, receipts, GPS, phone data)', 'Witness names and contact info', 'Video that shows where you were'],
     limits: ['Missing the notice deadline can lead to witnesses being blocked.'],
     charges: 'all',
     motionIds: ['dismiss-charges'],
-    sources: [S.r15_2],
+    sources: [S.stateCourts],
   },
   {
     id: 'missing-element',
@@ -537,14 +523,14 @@ export const DEFENSES: DefenseDef[] = [
     howToRaise: [
       'Open the charge in the Charge Library and check each element against the police report.',
       'Write the prosecutor a short letter pointing out the missing element and asking for dismissal or reduction.',
-      'At trial, move for judgment of acquittal (Rule 20) when the State rests.',
+      'At trial, move for judgment of acquittal when the prosecution rests, using your state’s procedure.',
     ],
-    timing: 'Negotiation: any time before trial. Rule 20: at trial.',
+    timing: 'Negotiation: any time before trial. Judgment of acquittal: at trial, after the prosecution rests.',
     evidence: ['Police report', 'Receipts, appraisals, medical records', 'Who else used the car, room, or bag'],
-    limits: ['A judge will not dismiss before trial just because the evidence is weak (Rule 16.4 does not allow it).'],
+    limits: ['A judge will not dismiss before trial just because the evidence is weak (pretrial dismissal motions generally do not allow that).'],
     charges: 'all',
     motionIds: ['judgment-of-acquittal'],
-    sources: [S.r16_4],
+    sources: [S.winship],
   },
   {
     id: 'marijuana-legal',
@@ -552,15 +538,15 @@ export const DEFENSES: DefenseDef[] = [
     category: 'The facts of the charge',
     outcome: 'Dismissal',
     summary:
-      'Since Proposition 207 (2020), adults 21 and over in Arizona may possess up to one ounce of marijuana, with no more than five grams as concentrate, and related paraphernalia. A charge for an amount within those limits should not stand. Laws change, so confirm the current statute.',
-    whenItApplies: ['You were 21 or older.', 'The amount was one ounce or less (five grams or less of concentrate).', 'You were not on school grounds or driving impaired.'],
-    howToRaise: ['Check the weight in the lab report or property sheet.', 'Ask the prosecutor to dismiss; if they refuse, file a motion to dismiss citing A.R.S. § 36-2852.'],
+      'Marijuana law varies sharply by state. In states where adult possession is legal, a charge for an amount within the legal limit should not stand; in states where it is not legal, this defense does not apply. Check your state’s current age, amount, concentrate, public-use, school-ground, and driving rules.',
+    whenItApplies: ['Your state allows adult possession of the amount involved.', 'You met the state’s age and amount limits, including any separate concentrate limit.', 'You were not in a prohibited place or driving impaired.'],
+    howToRaise: ['Check the weight in the lab report or property sheet.', 'Ask the prosecutor to dismiss; if they refuse, file a motion to dismiss citing your state’s marijuana law.'],
     timing: 'Before trial.',
     evidence: ['Lab report weight', 'Proof of age'],
-    limits: ['Does not cover driving while impaired, possession under 21, or amounts over the limit. Other states have different laws.'],
+    limits: ['Does not cover driving while impaired, possession below the legal age, amounts over the limit, or conduct your state still prohibits.'],
     charges: ['drugs'],
     motionIds: ['dismiss-charges'],
-    sources: [S.mj],
+    sources: [S.stateCourts],
   },
 
   // ---------------- Justification ----------------
@@ -570,20 +556,20 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Justification defenses',
     outcome: 'Acquittal; often dismissal once the prosecutor sees the evidence',
     summary:
-      'Arizona law allows physical force when a reasonable person would believe it was immediately necessary to protect against another person’s unlawful force (A.R.S. § 13-404). Justification is not an affirmative defense in Arizona: once there is some evidence of it, the State must prove beyond a reasonable doubt that you were NOT justified.',
+      'States generally allow physical force when a reasonable person would believe it was immediately necessary to protect against another person’s unlawful force. The exact rules and burden of proof vary: in some states, once there is some evidence of justification, the prosecution must prove beyond a reasonable doubt that you were not justified; in others, justification is treated as an affirmative defense. Check your state’s rule.',
     whenItApplies: ['The other person started it or threatened you first.', 'You were protecting someone else, your home, or your property.', 'You have injuries too.'],
     howToRaise: [
       'Photograph your injuries now and get medical records.',
       'Find witnesses and video (neighbors’ cameras, store cameras, phones).',
-      'File your Rule 15.2 notice listing self-defense.',
+      'File any notice of defenses your state requires, listing self-defense.',
       'Show the evidence to the prosecutor and ask for dismissal.',
     ],
-    timing: 'Notice of defenses: superior court within 40 days after arraignment or 10 days after the State’s disclosure, whichever is first; limited jurisdiction courts 20 days after disclosure.',
+    timing: 'Your state’s notice-of-defenses deadline controls. These deadlines can be short and may run from arraignment or disclosure; check the court’s rules right away.',
     evidence: ['Photos of your injuries', 'Medical records', 'Videos and witnesses', 'Prior threats or texts from the other person'],
     limits: ['The force used must be proportional; deadly force has stricter rules.', 'Not available if you provoked the fight (with some exceptions).'],
     charges: ['assault', 'dv', 'weapons', 'public', 'other'],
     motionIds: ['in-limine'],
-    sources: [S.selfdef, S.just, S.r15_2],
+    sources: [S.selfdef, S.stateCourts],
   },
   {
     id: 'entrapment',
@@ -591,15 +577,15 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Justification defenses',
     outcome: 'Acquittal',
     summary:
-      'Entrapment applies when the idea came from police or their agents, they pushed you into it, and you were not already predisposed to commit the crime. In Arizona it is an affirmative defense: you must admit the basic elements of the offense and prove entrapment by clear and convincing evidence.',
+      'Entrapment applies when the idea came from police or their agents, they pushed you into it, and you were not already predisposed to commit the crime. States differ on the burden: some treat entrapment as an affirmative defense you must prove, and some focus on whether police induced a person who was not predisposed. Raising it can require admitting the act, so check your state’s rule with a lawyer first.',
     whenItApplies: ['An informant or undercover officer pressured you repeatedly.', 'You had never done anything like this before and only agreed after persistent asking.'],
-    howToRaise: ['Collect the messages and call logs with the informant.', 'List entrapment in your Rule 15.2 notice.', 'Talk to a lawyer first — raising it means admitting the act.'],
-    timing: 'Notice of defenses deadline (Rule 15.2).',
+    howToRaise: ['Collect the messages and call logs with the informant.', 'List entrapment in any notice of defenses your state requires.', 'Talk to a lawyer first — raising it means admitting the act.'],
+    timing: 'Your state’s notice-of-defenses deadline; check it early.',
     evidence: ['Texts and recordings with the officer or informant', 'Evidence of no prior history'],
-    limits: ['Merely giving you an opportunity is not entrapment. You carry the burden.'],
+    limits: ['Merely giving you an opportunity is not entrapment. You may carry the burden, depending on state law.'],
     charges: ['drugs', 'weapons', 'fraud', 'other'],
     motionIds: [],
-    sources: [S.entrap, S.r15_2],
+    sources: [S.entrap, S.stateCourts],
   },
 
   // ---------------- DUI ----------------
@@ -609,15 +595,15 @@ export const DEFENSES: DefenseDef[] = [
     category: 'DUI-specific',
     outcome: 'Dismissal (sometimes with prejudice) or suppression',
     summary:
-      'In Arizona, if you ask to speak with a lawyer during a DUI investigation and it would not interfere with the investigation, police must let you, in private. In McNutt and Holland, the Arizona Supreme Court ordered DUI charges dismissed when police refused — because it cost the person a chance to gather evidence like an independent test. Where it did not affect evidence gathering, the usual remedy is suppressing what came after.',
+      'DUI counsel rights vary by state. Some states require police to allow a private call to a lawyer during a DUI investigation when it would not interfere with the investigation; others are narrower. If police refused a required call and that cost you a chance to gather evidence, such as an independent test, remedies can include suppression or, in serious cases, dismissal. Check your state’s DUI counsel rule.',
     whenItApplies: ['You asked for a lawyer and were told no, or “after the test.”', 'You were allowed to call but an officer stood and listened.'],
-    howToRaise: ['Get the body-cam and the DUI processing video.', 'Note the exact time you asked.', 'File a motion to dismiss, or to suppress, citing McNutt and Holland.'],
-    timing: 'Before trial; at least 20 days before in Arizona.',
+    howToRaise: ['Get the body-cam and the DUI processing video.', 'Note the exact time you asked.', 'File a motion to dismiss, or to suppress, citing your state’s DUI counsel rule.'],
+    timing: 'Before trial, by your state’s pretrial-motion deadline; check the court’s rules and file early.',
     evidence: ['Body-cam and station video', 'DUI forms showing times', 'Your phone records'],
     limits: ['Police can refuse if the call would truly disrupt the investigation; you must have actually asked.'],
     charges: ['dui'],
     motionIds: ['dismiss-charges', 'suppress-evidence'],
-    sources: [S.mcnutt, S.holland],
+    sources: [S.stateCourts],
   },
   {
     id: 'dui-independent-test',
@@ -625,7 +611,7 @@ export const DEFENSES: DefenseDef[] = [
     category: 'DUI-specific',
     outcome: 'Dismissal',
     summary:
-      'Arizona lets a person arrested for DUI get an independent test of their own. If police interfere — refusing a second sample, not letting you arrange a test, or releasing you too late for it to matter — the charge can be dismissed because the evidence that might have cleared you is gone.',
+      'Many states let a person arrested for DUI obtain an independent test. If police interfere — refusing a second sample, not letting you arrange a test, or releasing you too late for it to matter — the charge can be dismissed or evidence can be excluded because evidence that might have cleared you is gone. The right and remedy vary by state.',
     whenItApplies: ['You asked for your own blood test or second sample and were refused.', 'You were held for hours so any test would be useless.'],
     howToRaise: ['Document your request and the response.', 'File a motion to dismiss for denial of the right to gather exculpatory evidence.'],
     timing: 'Before trial.',
@@ -633,7 +619,7 @@ export const DEFENSES: DefenseDef[] = [
     limits: ['Police do not have to arrange or pay for the test, only not interfere.'],
     charges: ['dui'],
     motionIds: ['dismiss-charges'],
-    sources: [S.mcnutt],
+    sources: [S.stateCourts],
   },
   {
     id: 'dui-blood-draw',
@@ -644,9 +630,9 @@ export const DEFENSES: DefenseDef[] = [
       'A blood draw is a search. Police generally need a warrant or voluntary consent; the natural fading of alcohol alone is not an emergency that excuses a warrant (Missouri v. McNeely), and states cannot make it a crime to refuse a blood test (Birchfield v. North Dakota). Consent given after being told you had no choice may not be voluntary.',
     whenItApplies: ['No warrant was obtained for your blood.', 'You were told you “had to” give blood, or agreed only after being threatened.', 'The person drawing blood was not qualified, or the chain of custody has gaps.'],
     howToRaise: ['Get the implied-consent form, the warrant (if any), and the phlebotomist’s records.', 'File a motion to suppress the blood evidence.'],
-    timing: 'At least 20 days before trial in Arizona.',
-    evidence: ['Admin per se / implied consent form', 'Warrant and affidavit', 'Lab chain-of-custody and retest sample'],
-    limits: ['Breath tests after arrest do not need a warrant. Clear, voluntary consent defeats the claim.'],
+    timing: 'By your state’s pretrial-motion deadline; check the court’s rules and file early.',
+    evidence: ['Implied-consent / administrative license form', 'Warrant and affidavit', 'Lab chain-of-custody and retest sample'],
+    limits: ['Breath tests after arrest do not need a warrant. Clear, voluntary consent defeats the claim.', 'A separate license hearing may have a very short deadline; check the notice you received and your state’s administrative-hearing rule.'],
     charges: ['dui'],
     motionIds: ['suppress-evidence'],
     sources: [S.mcneely, S.birchfield],
@@ -659,7 +645,7 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Ways out without a trial',
     outcome: 'Charges dismissed after you finish the program',
     summary:
-      'Arizona county attorneys run diversion (deferred prosecution) programs — classes, treatment, community service, or restitution — and when you finish, the charges are dismissed. Many cities run their own for misdemeanors. Admission is up to the prosecutor, so ask early and make your case.',
+      'Many prosecutors run diversion (deferred prosecution) programs — classes, treatment, community service, or restitution — and when you finish, the charges are dismissed. Availability and eligibility vary by state and county, and some cities run their own misdemeanor programs. Admission is usually up to the prosecutor, so ask early and make your case.',
     whenItApplies: ['First offense or little record.', 'Drug possession, shoplifting, minor theft, or other lower-level charges.', 'Substance use, mental health, or veteran status played a part.'],
     howToRaise: [
       'Ask the prosecutor in writing whether you are eligible for diversion.',
@@ -671,7 +657,7 @@ export const DEFENSES: DefenseDef[] = [
     limits: ['Serious violent offenses, some DUIs, and certain prior convictions usually make you ineligible. Failing the program reinstates the case.'],
     charges: 'all',
     motionIds: ['diversion-request'],
-    sources: [S.divert, S.mcao, S.apaac],
+    sources: [S.stateCourts],
   },
   {
     id: 'compromise',
@@ -679,15 +665,15 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Ways out without a trial',
     outcome: 'Dismissal of the misdemeanor',
     summary:
-      'In Arizona, many misdemeanors with an identifiable victim can be dismissed if the victim acknowledges in writing that they have received satisfaction — usually repayment for the loss. For assault, threatening, and domestic violence charges, it is only available on the prosecutor’s recommendation.',
+      'Some states allow certain misdemeanors with an identifiable victim to be dismissed if the victim acknowledges in writing that they have received satisfaction — usually repayment for the loss. Availability, eligible charges, and whether the prosecutor must recommend it vary by state.',
     whenItApplies: ['A misdemeanor with a person or business as the victim (criminal damage, minor theft).', 'You can repay the loss, and the victim is willing to sign.'],
     howToRaise: ['Ask the prosecutor or victim advocate about a misdemeanor compromise.', 'Pay the loss and get a signed acknowledgment.', 'File it with the court and ask for dismissal.'],
     timing: 'Before trial.',
     evidence: ['Proof of payment', 'The victim’s signed acknowledgment'],
-    limits: ['Not available for felonies. For assault and DV, the prosecutor must recommend it. Do not contact a protected person if a no-contact order exists — go through the prosecutor.'],
+    limits: ['Not available for felonies. For assault and DV, state law or the prosecutor may bar it or require a recommendation. Do not contact a protected person if a no-contact order exists — go through the prosecutor.'],
     charges: ['theft', 'assault', 'dv', 'public', 'traffic', 'other'],
     motionIds: ['dismiss-charges'],
-    sources: [S.compromise, S.tucson],
+    sources: [S.stateCourts],
   },
   {
     id: 'incompetency',
@@ -695,15 +681,15 @@ export const DEFENSES: DefenseDef[] = [
     category: 'Ways out without a trial',
     outcome: 'Case paused; misdemeanors may be dismissed',
     summary:
-      'A person who cannot understand the proceedings or help with their defense because of a mental illness, disability, or brain injury cannot be tried. In Arizona, if a person charged with a misdemeanor is found incompetent, the court may dismiss the charges (A.R.S. § 13-4504).',
+      'A person who cannot understand the proceedings or help with their defense because of a mental illness, disability, or brain injury cannot be tried. If a person is found incompetent, the case is usually paused for evaluation or restoration; whether charges can be dismissed, and when, varies by state and charge level.',
     whenItApplies: ['Serious mental illness, intellectual disability, dementia, or brain injury.', 'Trouble understanding what the judge and lawyers are saying.'],
-    howToRaise: ['Tell your lawyer or the court; any party can request a competency evaluation (Rule 11).', 'Gather medical and treatment records.'],
+    howToRaise: ['Tell your lawyer or the court; any party can request a competency evaluation under your state’s competency procedure.', 'Gather medical and treatment records.'],
     timing: 'Any time; it pauses the case.',
     evidence: ['Medical and psychiatric records', 'Special education or disability records'],
     limits: ['Felony cases usually go to restoration treatment rather than dismissal.'],
     charges: 'all',
     motionIds: [],
-    sources: [S.incomp],
+    sources: [S.dusky, S.stateCourts],
   },
   {
     id: 'ask-prosecutor',
@@ -723,7 +709,7 @@ export const DEFENSES: DefenseDef[] = [
     limits: ['Anything you write can be used against you — do not admit facts. Have a lawyer review it if you can.'],
     charges: 'all',
     motionIds: [],
-    sources: [S.r16_4],
+    sources: [],
   },
   {
     id: 'right-to-counsel',
@@ -763,7 +749,7 @@ export const DEFENSE_MYTHS: { myth: string; truth: string }[] = [
   },
   {
     myth: 'I can ask the judge to dismiss because the evidence is weak.',
-    truth: 'Not before trial in Arizona — Rule 16.4 is for legal defects, not weighing evidence. Weak evidence is a reason for the prosecutor to dismiss, or for an acquittal at trial.',
+    truth: 'Usually not before trial — pretrial dismissal is generally for legal defects, not weighing evidence. Weak evidence is a reason for the prosecutor to dismiss, or for an acquittal at trial.',
   },
 ];
 
@@ -995,14 +981,14 @@ export const SCREEN_QUESTIONS: ScreenQuestion[] = [
   },
   {
     id: 'oldOffense',
-    text: 'Did the event happen a long time before you were charged — more than a year for a misdemeanor, or more than 7 years for a felony?',
+    text: 'Did the event happen a long time before you were charged — long enough that your state’s deadline to file charges may have passed?',
     onYes: [{ defenseId: 'statute-of-limitations', weight: 3, why: 'The charge may have been filed too late.' }],
     onUnsure: [{ defenseId: 'statute-of-limitations', weight: 1, why: 'Compare the offense date with the filing date.' }],
   },
   {
     id: 'longDelay',
-    text: 'Has it been more than about 5 months since your arraignment without a trial, and you did not ask for the delays?',
-    help: 'In Arizona: 150 days if you are in custody, 180 days if you are out — not counting delays you asked for.',
+    text: 'Has a long time passed since your arraignment without a trial, and you did not ask for the delays?',
+    help: 'Speedy-trial clocks vary by state and custody status; count the days and check your court’s rule.',
     onYes: [{ defenseId: 'speedy-trial', weight: 3, why: 'The speedy-trial clock may have run.' }],
     onUnsure: [{ defenseId: 'speedy-trial', weight: 1, why: 'Count the days since arraignment.' }],
   },
@@ -1014,14 +1000,14 @@ export const SCREEN_QUESTIONS: ScreenQuestion[] = [
   {
     id: 'grandJury',
     text: 'Is it a felony where you were indicted by a grand jury (rather than having a preliminary hearing)?',
-    onYes: [{ defenseId: 'grand-jury', weight: 1, why: 'Grand jury indictments can be challenged — on a strict 45-day deadline.' }],
+    onYes: [{ defenseId: 'grand-jury', weight: 1, why: 'Grand jury indictments can be challenged — on a short state deadline.' }],
   },
   {
     id: 'twice',
     text: 'Was this same charge already dismissed, decided, or are you charged twice for the same act?',
     onYes: [
       { defenseId: 'double-jeopardy', weight: 2, why: 'Possible duplicate prosecution.' },
-      { defenseId: 'speedy-trial', weight: 1, why: 'Dismissing and refiling cannot be used to dodge Rule 8.' },
+      { defenseId: 'speedy-trial', weight: 1, why: 'Dismissing and refiling may not restart speedy-trial time.' },
     ],
   },
   {

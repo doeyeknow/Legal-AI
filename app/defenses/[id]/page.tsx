@@ -62,10 +62,14 @@ export default function DefenseDetail({ params }: { params: { id: string } }) {
           ))}
           <Link className="btn ghost" href="/defenses/check">Check my case</Link>
         </div>
-        <h2>Sources</h2>
-        <ul className="defsrclist">
-          {d.sources.map((s) => <li key={s.url}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.label}</a></li>)}
-        </ul>
+        {d.sources.length > 0 && (
+          <>
+            <h2>Sources</h2>
+            <ul className="defsrclist">
+              {d.sources.map((s) => <li key={s.url}><a href={s.url} target="_blank" rel="noopener noreferrer">{s.label}</a></li>)}
+            </ul>
+          </>
+        )}
         <p className="fineprint">{DEFENSE_DISCLAIMER}</p>
         {related.length > 0 && (
           <>

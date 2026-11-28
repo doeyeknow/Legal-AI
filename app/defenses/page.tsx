@@ -35,7 +35,9 @@ export default function DefensesPage() {
         <h1>Criminal defense guide</h1>
         <p>
           The real ways criminal charges get dismissed, thrown out, or reduced — each with how to
-          raise it, the deadline, what to collect, and the rule or case behind it.
+          raise it, the deadline, what to collect, and the rule or case behind it. Constitutional
+          protections apply nationwide; state deadlines and procedures vary, so entries flag where
+          your own court’s rule controls.
         </p>
         <div className="defcta">
           <Link className="btn primary big" href="/defenses/check">Check my case</Link>
