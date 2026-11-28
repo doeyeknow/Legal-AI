@@ -91,6 +91,22 @@ export async function rewriteProfessionally(
     return { ok: false, status: 502, message: 'The AI service could not be reached. Your original text is unchanged.' };
   }
   if (!res.ok) {
+    // Log the upstream refusal server-side only (status + the
+    // provider's short error message — never the key or the user's
+    // text) so a failed rewrite is diagnosable from the runtime
+    // logs instead of a bare 502.
+    let detail = '';
+    try {
+      const errBody = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+      if (typeof errBody?.error?.message === 'string') detail = errBody.error.message.slice(0, 200);
+    } catch { /* */ }
+    console.error('[ai-rewrite] upstream error', res.status, detail);
+    if (res.status === 401) {
+      return { ok: false, status: 502, message: 'The AI service refused the site’s key. Your original text is unchanged.' };
+    }
+    if (res.status === 429) {
+      return { ok: false, status: 502, message: 'The AI service is rate-limited or out of credits. Your original text is unchanged.' };
+    }
     return { ok: false, status: 502, message: 'The AI rewrite failed. Your original text is unchanged.' };
   }
   const data = (await res.json().catch(() => null)) as {
@@ -142,7 +158,10 @@ export async function chatJson<T = unknown>(
       }),
       signal: AbortSignal.timeout(opts.timeoutMs ?? 20_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error('[ai-chat] upstream error', res.status);
+      return null;
+    }
     const data = (await res.json().catch(() => null)) as {
       choices?: { message?: { content?: string } }[];
     } | null;

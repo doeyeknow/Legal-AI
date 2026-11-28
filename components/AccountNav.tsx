@@ -32,7 +32,7 @@ export default function AccountNav() {
   if (state === 'in' || state === 'member') {
     return (
       <>
-        {state === 'member' ? <a href="/dashboard">Dashboard</a> : <a href="/membership">Membership</a>}
+        {state === 'member' ? <a href="/dashboard">Dashboard</a> : (<><a href="/my-documents">My documents</a><a href="/membership">Membership</a></>)}
         <a href="/account">My account</a>
       </>
     );

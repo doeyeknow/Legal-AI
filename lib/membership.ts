@@ -87,6 +87,29 @@ export async function syncMembershipCheckout(stripe: Stripe, sessionId: string, 
   return true;
 }
 
+/** Grant one free week of weekly membership from a coupon code —
+ *  no Stripe involved. One free week per account, ever: the grant's
+ *  source names the account, so a second redemption finds the
+ *  first row and is refused. The grant behaves like a paid weekly
+ *  membership (activeMembership, dashboard access) until its
+ *  valid_until passes; it carries no Stripe customer, so there is
+ *  nothing to manage or cancel. */
+export async function grantFreeWeek(userId: string): Promise<{ ok: true } | { error: 'already_active' | 'already_redeemed' }> {
+  await ensureSchema();
+  if (await activeMembership(userId)) return { error: 'already_active' };
+  const source = `coupon-free-week:${userId}`;
+  const prior = await query<{ stripe_source: string }>(
+    `SELECT stripe_source FROM membership_grants WHERE user_id = $1 AND stripe_source = $2 LIMIT 1`, [userId, source]);
+  if (prior.length) return { error: 'already_redeemed' };
+  const until = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  await recordGrant({
+    source, userId, customer: null, plan: 'weekly', active: true, until, checkedAt: new Date(),
+  });
+  const active = await activeMembership(userId);
+  if (!active) throw new Error('free-week grant was not recorded');
+  return { ok: true };
+}
+
 export async function syncLifetimeRefund(stripe: Stripe, paymentIntent: string) {
   const sessions = await stripe.checkout.sessions.list({ payment_intent: paymentIntent, limit: 5 });
   for (const session of sessions.data) {

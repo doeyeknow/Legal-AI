@@ -4,8 +4,9 @@ import { createHash } from 'node:crypto';
 import { dbUnavailable, requireAccount } from '@/lib/api-guard';
 import { checkoutOrigin } from '@/lib/checkout-origin';
 import { ensureSchema, getPool } from '@/lib/db';
-import { activeMembership, APP_MEMBERSHIP, recurringCustomer, syncMembershipCheckout } from '@/lib/membership';
+import { activeMembership, APP_MEMBERSHIP, grantFreeWeek, recurringCustomer, syncMembershipCheckout } from '@/lib/membership';
 import { isMembershipPlan, MEMBERSHIP_PLANS, type MembershipPlan } from '@/lib/plans';
+import { isValidFreeWeekCoupon } from '@/lib/promo';
 import { stripeKeyStatus } from '@/lib/stripe-config';
 
 export const runtime = 'nodejs';
@@ -24,10 +25,33 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const account = await requireAccount(req);
   if ('error' in account) return account.error;
-  const origin = checkoutOrigin(req);
-  if (!origin) return NextResponse.json({ message: 'Open this page on the official quikForm site.' }, { status: 403 });
   const userId = account.user.id;
   const body = await req.json().catch(() => null);
+  // A free-week coupon needs no Stripe at all: validate the code
+  // and record the grant directly. One free week per account.
+  // It also must not depend on checkout-origin configuration.
+  if (body?.action === 'redeem-week') {
+    try {
+      if (!isValidFreeWeekCoupon(body?.code)) {
+        return NextResponse.json({ message: 'That code is not a free-week code. Check the spelling and try again.' }, { status: 400 });
+      }
+      const result = await grantFreeWeek(userId);
+      if ('error' in result) {
+        return NextResponse.json({ message: result.error === 'already_active'
+          ? 'You already have an active membership.'
+          : 'That free week was already used on this account.' }, { status: 409 });
+      }
+      const membership = await activeMembership(userId);
+      return NextResponse.json({ plan: membership?.plan || 'weekly' });
+    } catch (err) {
+      // Never fail as a bare 500: the panel can only show a JSON
+      // message, and the cause belongs in the runtime logs.
+      console.error('[redeem-week] failed', err instanceof Error ? err.message : err);
+      return NextResponse.json({ message: 'The free week could not be redeemed right now. Try again shortly.' }, { status: 502 });
+    }
+  }
+  const origin = checkoutOrigin(req);
+  if (!origin) return NextResponse.json({ message: 'Open this page on the official quikForm site.' }, { status: 403 });
   const key = stripeKeyStatus();
   if (!key.ok) return NextResponse.json({ message: 'Membership billing is not available right now.' }, { status: 503 });
   const stripe = new Stripe(key.key, { timeout: 8000, maxNetworkRetries: 1 });
@@ -71,14 +95,13 @@ export async function POST(req: NextRequest) {
       const { rows } = await client.query<{ stripe_session: string }>(
         'SELECT stripe_session FROM membership_checkouts WHERE user_id = $1', [userId]);
       const previous = rows[0]?.stripe_session;
-      const cancel = `${back}${back.includes('?') ? '&' : '?'}cancelled=1`;
-      const success = `${back}${back.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`;
+      const returnUrl = `${back}${back.includes('?') ? '&' : '?'}session_id={CHECKOUT_SESSION_ID}`;
       if (previous) {
         const old = await stripe.checkout.sessions.retrieve(previous);
         if (old.status === 'open') {
-          if (old.metadata?.plan === plan && old.success_url === success && old.url) {
+          if (old.metadata?.plan === plan && (old.ui_mode === 'embedded_page' || old.ui_mode === 'embedded') && old.return_url === returnUrl && old.client_secret) {
             await client.query('COMMIT');
-            return NextResponse.json({ url: old.url });
+            return NextResponse.json({ clientSecret: old.client_secret, sessionId: old.id });
           }
           await stripe.checkout.sessions.expire(previous);
         } else if (old.status === 'complete') {
@@ -93,6 +116,7 @@ export async function POST(req: NextRequest) {
       // Don't sell a second plan that could charge alongside the first.
       const recurring = (await client.query<{ stripe_source: string }>(
         `SELECT stripe_source FROM membership_grants WHERE user_id = $1 AND plan <> 'lifetime'
+         AND stripe_source LIKE 'sub\_%'
          ORDER BY checked_at DESC LIMIT 1`, [userId])).rows[0]?.stripe_source;
       if (recurring) {
         const subscription = await stripe.subscriptions.retrieve(recurring);
@@ -114,24 +138,33 @@ export async function POST(req: NextRequest) {
       const metadata = { product: APP_MEMBERSHIP, plan, userId };
       const session = await stripe.checkout.sessions.create({
         mode: details.interval ? 'subscription' : 'payment',
+        ui_mode: 'embedded_page',
         allowed_payment_method_types: ['card'],
         line_items: [{ price: price.id, quantity: 1 }],
         client_reference_id: userId,
         ...(customer ? { customer } : { customer_email: account.user.email }),
         metadata,
         ...(details.interval ? { subscription_data: { metadata } } : { customer_creation: customer ? undefined : 'always' }),
-        success_url: success,
-        cancel_url: cancel,
-      }, { idempotencyKey: `membership:${createHash('sha256').update(JSON.stringify([userId, previous, plan, price.id, back])).digest('hex')}` });
+        return_url: returnUrl,
+        branding_settings: { display_name: 'quikForm', button_color: '#D9A62E', border_style: 'rounded' },
+      }, { idempotencyKey: `membership:${createHash('sha256').update(JSON.stringify([userId, previous, plan, price.id, back, 'embedded-page-v2'])).digest('hex')}` });
       await client.query(`INSERT INTO membership_checkouts (user_id, stripe_session) VALUES ($1,$2)
         ON CONFLICT (user_id) DO UPDATE SET stripe_session = EXCLUDED.stripe_session`, [userId, session.id]);
       await client.query('COMMIT');
-      return NextResponse.json({ url: session.url });
+      return NextResponse.json({ clientSecret: session.client_secret, sessionId: session.id });
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;
     } finally { client.release(); }
-  } catch {
+  } catch (err) {
+    const e = err as { type?: string; code?: string; statusCode?: number; message?: string };
+    console.error('[membership-billing] failed', JSON.stringify({
+      action: typeof body?.action === 'string' ? body.action : null,
+      type: e.type || null,
+      code: e.code || null,
+      statusCode: e.statusCode || null,
+      message: e.message || String(err),
+    }));
     return NextResponse.json({ message: 'Stripe billing could not be reached. Please try again shortly.' }, { status: 502 });
   }
 }

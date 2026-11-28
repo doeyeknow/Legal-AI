@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { getMotion } from '@/lib/motions/match';
-import { isValidCoupon } from '@/lib/promo';
+import { isValidCoupon, isValidFreeWeekCoupon } from '@/lib/promo';
 import { stripeKeyStatus, stripeProblemMessage } from '@/lib/stripe-config';
 import { getSessionUser } from '@/lib/auth';
-import { activeMembership } from '@/lib/membership';
+import { activeMembership, grantFreeWeek } from '@/lib/membership';
 import { MOTION_PRICE } from '@/lib/plans';
 import { localFreeDownload, MOTION_PRODUCT, packetHash } from '@/lib/motion-payment';
 import { checkoutOrigin } from '@/lib/checkout-origin';
@@ -55,6 +55,30 @@ export async function POST(req: NextRequest) {
     if (isValidCoupon(body.coupon)) {
       return NextResponse.json({ ok: true, couponFree: true });
     }
+    if (isValidFreeWeekCoupon(body.coupon)) {
+      if (!user) {
+        return NextResponse.json(
+          { error: 'free_week_sign_in_required', message: 'Sign in or create a free account to redeem that free-week promo code.' },
+          { status: 401 }
+        );
+      }
+      try {
+        const result = await grantFreeWeek(user.id);
+        if (!('error' in result) || result.error === 'already_active') {
+          return NextResponse.json({ ok: true, member: true });
+        }
+        return NextResponse.json(
+          { error: 'free_week_already_redeemed', message: 'That free week was already used on this account.' },
+          { status: 409 }
+        );
+      } catch (e) {
+        console.error('[free-week checkout] failed', e instanceof Error ? e.message : e);
+        return NextResponse.json(
+          { error: 'free_week_failed', message: 'The free week could not be redeemed right now. Try again shortly.' },
+          { status: 502 }
+        );
+      }
+    }
     return NextResponse.json(
       { error: 'coupon_invalid', message: "That coupon code doesn't look right. Check it or continue without it for $5." },
       { status: 400 }
@@ -80,6 +104,7 @@ export async function POST(req: NextRequest) {
     const stripe = new Stripe(key);
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
+      ui_mode: 'embedded_page',
       line_items: [
         {
           price_data: {
@@ -95,10 +120,10 @@ export async function POST(req: NextRequest) {
       ],
       allowed_payment_method_types: ['card'],
       metadata: { motionId: motion.id, product: MOTION_PRODUCT, packetHash: packetHash(key, motion.id, body) },
-      success_url: `${origin}/interview?payment=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/interview?payment=cancelled`,
+      return_url: `${origin}/interview?payment=success&session_id={CHECKOUT_SESSION_ID}`,
+      branding_settings: { display_name: 'quikForm', button_color: '#D9A62E', border_style: 'rounded' },
     });
-    return NextResponse.json({ ok: true, url: session.url, sessionId: session.id });
+    return NextResponse.json({ ok: true, clientSecret: session.client_secret, sessionId: session.id });
   } catch (e) {
     console.error('Stripe checkout failed:', e instanceof Error ? e.message : e);
     return NextResponse.json(

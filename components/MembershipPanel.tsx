@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import MembershipPlans from './MembershipPlans';
+import EmbeddedCheckoutBox from './EmbeddedCheckoutBox';
 import { MEMBERSHIP_PLANS, type MembershipPlan } from '@/lib/plans';
 
 export default function MembershipPanel({
@@ -20,20 +21,57 @@ export default function MembershipPanel({
   const [active, setActive] = useState(initialPlan);
   const [busy, setBusy] = useState<string | null>(sessionId && signedIn && !initialPlan ? 'confirm' : null);
   const [error, setError] = useState('');
+  const [coupon, setCoupon] = useState('');
+  const [checkoutClientSecret, setCheckoutClientSecret] = useState('');
+  const [checkoutSessionId, setCheckoutSessionId] = useState('');
 
-  async function billing(action: 'checkout' | 'confirm' | 'portal', plan?: MembershipPlan) {
+  async function billing(action: 'checkout' | 'confirm' | 'portal', plan?: MembershipPlan, sessionOverride?: string) {
     setBusy(plan || action);
     setError('');
     try {
       const response = await fetch('/api/membership', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, plan, sessionId, returnTo }),
+        body: JSON.stringify({ action, plan, sessionId: sessionOverride || sessionId, returnTo }),
       });
       const data = await response.json();
       if (!response.ok) { setError(data.message || 'Billing is temporarily unavailable.'); return; }
-      if (data.plan) setActive(data.plan);
+      if (data.plan) {
+        setActive(data.plan);
+        setCheckoutClientSecret('');
+        setCheckoutSessionId('');
+      }
+      if (data.clientSecret) {
+        setCheckoutClientSecret(data.clientSecret);
+        setCheckoutSessionId(data.sessionId || '');
+        return;
+      }
+      if (action === 'checkout') {
+        setError('Checkout could not load on this page. No charge was made. Please try again.');
+        return;
+      }
       if (data.url) window.location.assign(data.url);
+    } catch { setError('Billing is temporarily unavailable. Try again shortly.'); }
+    finally { setBusy(null); }
+  }
+
+  async function redeemWeek() {
+    setBusy('redeem-week');
+    setError('');
+    try {
+      const response = await fetch('/api/membership', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'redeem-week', code: coupon }),
+      });
+      const data = await response.json();
+      if (!response.ok) { setError(data.message || 'That code could not be redeemed.'); return; }
+      if (data.plan) {
+        setActive(data.plan);
+        setCoupon('');
+        setCheckoutClientSecret('');
+        setCheckoutSessionId('');
+      }
     } catch { setError('Billing is temporarily unavailable. Try again shortly.'); }
     finally { setBusy(null); }
   }
@@ -68,6 +106,30 @@ export default function MembershipPanel({
           {!billingAvailable && <p className="warn">Membership checkout is not available on this site right now. Individual motion purchases are separate.</p>}
           {selected && signedIn && billingAvailable && <p className="fineprint">Selected: {MEMBERSHIP_PLANS[selected].name}. Confirm your choice below.</p>}
           <MembershipPlans choose={(plan) => billing('checkout', plan)} busy={busy || (billingAvailable ? null : 'unavailable')} signedIn={signedIn} returnTo={returnTo} />
+          {checkoutClientSecret && (
+            <>
+              <EmbeddedCheckoutBox
+                clientSecret={checkoutClientSecret}
+                onComplete={() => void billing('confirm', undefined, checkoutSessionId)}
+                onError={setError}
+              />
+              <button className="btn" type="button" disabled={Boolean(busy)} onClick={() => { setCheckoutClientSecret(''); setCheckoutSessionId(''); }}>
+                Cancel checkout
+              </button>
+            </>
+          )}
+          {signedIn && (
+            <form onSubmit={(e) => { e.preventDefault(); void redeemWeek(); }}>
+              <label htmlFor="free-week-code">Promo code</label>
+              <div className="choices">
+                <input id="free-week-code" value={coupon} onChange={(e) => setCoupon(e.target.value)} placeholder="Enter promo code" autoComplete="off" />
+                <button className="btn" type="submit" disabled={Boolean(busy) || !coupon.trim()}>
+                  {busy === 'redeem-week' ? 'Redeeming…' : 'Redeem'}
+                </button>
+              </div>
+            </form>
+          )}
+          <p className="fineprint">Already bought a motion or started an interview? <Link href="/my-documents">View your documents and drafts</Link> — no membership needed.</p>
           {signedIn && canManage && <button className="btn" disabled={Boolean(busy)} onClick={() => billing('portal')}>Manage recurring billing</button>}
         </>
       )}

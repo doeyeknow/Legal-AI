@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { dbUnavailable, notFound, requireUser } from '@/lib/api-guard';
+import { dbUnavailable, notFound, requireOwner } from '@/lib/api-guard';
 import { getDocument } from '@/lib/cases';
 import { getMotion } from '@/lib/motions/match';
 import { generateMotionPdf } from '@/lib/pdf';
@@ -15,7 +15,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { id: string; docId: string } },
 ) {
-  const g = await requireUser(req);
+  const g = await requireOwner(req);
   if ('error' in g) return g.error;
   try {
     const doc = await getDocument(g.user.id, params.id, params.docId);

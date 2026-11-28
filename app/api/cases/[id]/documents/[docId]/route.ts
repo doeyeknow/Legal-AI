@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cleanStr, dbUnavailable, notFound, requireUser } from '@/lib/api-guard';
+import { cleanStr, dbUnavailable, notFound, requireOwner } from '@/lib/api-guard';
 import { deleteDocument, renameDocument } from '@/lib/cases';
 
 export const dynamic = 'force-dynamic';
@@ -10,7 +10,7 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string; docId: string } },
 ) {
-  const g = await requireUser(req);
+  const g = await requireOwner(req);
   if ('error' in g) return g.error;
   try {
     const ok = await deleteDocument(g.user.id, params.id, params.docId);
@@ -26,7 +26,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string; docId: string } },
 ) {
-  const g = await requireUser(req);
+  const g = await requireOwner(req);
   if ('error' in g) return g.error;
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const label = cleanStr(body?.label, 200);

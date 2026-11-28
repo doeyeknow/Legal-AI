@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { getMotion } from '@/lib/motions/match';
+import { composeChildrenAnswers } from '@/lib/motions/children';
 import { generateMotionPdf } from '@/lib/pdf';
 import { getSessionUser } from '@/lib/auth';
 import { getOwnedCaseLite, saveDocumentForUser } from '@/lib/cases';
@@ -21,7 +22,11 @@ export async function POST(req: NextRequest) {
   if (!motion) {
     return NextResponse.json({ error: 'unknown_motion' }, { status: 400 });
   }
-  const answers = Object.fromEntries(Object.entries(body.answers || {}).filter(([, value]) => typeof value === 'string')) as Answers;
+  const answers = composeChildrenAnswers(Object.fromEntries(Object.entries(body.answers || {}).filter(([, value]) => typeof value === 'string')) as Answers);
+  // Defensive: a client that still sends raw per-child keys (or a
+  // stale bundle) gets composed here too, so the PDF never sees
+  // gate keys or childN_* keys. Already-composed answers pass
+  // through unchanged.
   if (!answers.fullName?.trim() || !answers.zip?.trim()) {
     return NextResponse.json({ error: 'incomplete', message: 'The interview answers are incomplete.' }, { status: 400 });
   }

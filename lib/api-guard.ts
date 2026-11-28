@@ -42,6 +42,15 @@ export async function requireUser(req: NextRequest): ReturnType<typeof requireAc
   }
 }
 
+/** Own data — a signed-in user's drafts and paid documents — needs
+ *  a session only, no membership. The basic dashboard
+ *  (/my-documents) runs on this: non-members can save, resume,
+ *  delete and re-download their own work, while the member tools
+ *  keep the membership gate in requireUser. */
+export async function requireOwner(req: NextRequest): ReturnType<typeof requireAccount> {
+  return requireAccount(req);
+}
+
 export function dbUnavailable(): NextResponse {
   return NextResponse.json(
     { error: "accounts_unavailable", message: ACCOUNTS_MESSAGE },

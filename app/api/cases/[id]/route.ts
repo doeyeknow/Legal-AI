@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cleanStr, dbUnavailable, notFound, requireUser } from '@/lib/api-guard';
+import { cleanStr, dbUnavailable, notFound, requireOwner, requireUser } from '@/lib/api-guard';
 import { getCaseDetail, updateCase, deleteCase } from '@/lib/cases';
 import { CASE_STATUSES } from '@/lib/dashboard-types';
 
@@ -46,7 +46,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 // comms, watches, and the appearance cascade with it; court mail is
 // only unassigned, never deleted.
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const g = await requireUser(req);
+  const g = await requireOwner(req);
   if ('error' in g) return g.error;
   try {
     const ok = await deleteCase(g.user.id, params.id);

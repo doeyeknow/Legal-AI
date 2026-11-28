@@ -20,7 +20,7 @@ export default function MembershipPlans({
             <Link className="btn" href={`/membership?plan=${id}`}>Choose {plan.name.toLowerCase()}</Link>
           ) : signedIn ? (
             <button className="btn" type="button" disabled={Boolean(busy)} onClick={() => choose(id)}>
-              {busy === id ? 'Opening checkout…' : `Choose ${plan.name.toLowerCase()}`}
+              {busy === id ? 'Loading checkout…' : `Choose ${plan.name.toLowerCase()}`}
             </button>
           ) : (
             <Link className="btn" href={`/account?membership=${id}${returnTo ? '&return=interview' : ''}`}>Sign in for {plan.name.toLowerCase()}</Link>

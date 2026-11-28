@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { dbUnavailable, requireUser } from '@/lib/api-guard';
+import { dbUnavailable, requireOwner } from '@/lib/api-guard';
 import { upsertDraft, type DraftData } from '@/lib/cases';
 import { getMotion } from '@/lib/motions/match';
 import type { Answers } from '@/lib/motions/types';
@@ -13,7 +13,7 @@ export const runtime = 'nodejs';
 // every failure as "try again on the next change" and never blocks
 // on it. Guests get the guard's 401 and simply never call this.
 export async function POST(req: NextRequest) {
-  const g = await requireUser(req);
+  const g = await requireOwner(req);
   if ('error' in g) return g.error;
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const motion = getMotion(typeof body?.motionId === 'string' ? body.motionId : '');

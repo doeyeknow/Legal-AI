@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import type { MotionDef, MotionField, Answers } from '@/lib/motions/types';
 import { SHARED_FIELDS, DISCLAIMER, fill } from '@/lib/motions/types';
+import { composeChildrenAnswers, expandChildrenQueue, readChildrenCount, readHasChildren, CHILDREN_COUNT_KEY, HAS_CHILDREN_KEY } from '@/lib/motions/children';
 import { ALL_MOTIONS, CATEGORIES } from '@/lib/motions/data';
 import { matchSituation, getMotion } from '@/lib/motions/match';
 import { Icon, CATEGORY_ICONS, type IconName } from './icons';
@@ -18,6 +19,7 @@ import { SpeechPlayer } from '@/lib/speech';
 import type { CourtRecord } from '@/lib/courts/index';
 import { isCriminalAdversarial, statePartyName } from '@/lib/state-party';
 import DefenseCheck from './DefenseCheck';
+import EmbeddedCheckoutBox from './EmbeddedCheckoutBox';
 import { looksCriminal } from '@/lib/defenses';
 
 /** One AI suggestion on the review page: the user's own words, the
@@ -30,7 +32,11 @@ interface PolishItem {
   choice: 'ai' | 'mine';
 }
 
-interface Msg { from: 'bot' | 'user'; text: string }
+/** A chat message. `speak` is what voice mode reads aloud for a
+ *  bot message — when set, the spoken line differs from the
+ *  displayed text (questions show their full detail on screen but
+ *  speak only the main question). */
+interface Msg { from: 'bot' | 'user'; text: string; speak?: string }
 /** A ready-made answer offered as a tappable badge above the
  *  composer. Only ever built for questions whose answer set is
  *  genuinely known — never for open factual fields. */
@@ -120,10 +126,22 @@ export default function Interview() {
   const [queue, setQueue] = useState<MotionField[]>([]);
   const [qIdx, setQIdx] = useState(0);
   const [qTotal, setQTotal] = useState(0);
+  /** The motion's base queue from buildQueue (before the children
+   *  gate expands it) — proceedWith rebuilds the effective queue
+   *  from this + the latest answers on every answer, so the gate
+   *  can add the count question, expand per-child blocks, or drop
+   *  every gated field when the answer changes. */
+  const baseQueueRef = useRef<MotionField[]>([]);
+  /** The latest expanded fields-stage queue, for the review screen:
+   *  reviewPairs lists the per-child and gate questions from here
+   *  (the raw motion fields have no childN_* entries). */
+  const motionQueueRef = useRef<MotionField[]>([]);
   const [signature, setSignature] = useState<string | null>(null);
   const [feeWaiverAdded, setFeeWaiverAdded] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [embeddedClientSecret, setEmbeddedClientSecret] = useState('');
+  const [embeddedSessionId, setEmbeddedSessionId] = useState('');
   const [member, setMember] = useState(false);
   const restoredPacket = useRef(false);
   const [coupon, setCoupon] = useState('');
@@ -174,13 +192,21 @@ export default function Interview() {
   const playerRef = useRef<SpeechPlayer | null>(null);
   const spokenUptoRef = useRef(0);
   const announcedStageRef = useRef('');
-  const recogRef = useRef<any>(null); // unused (legacy Web Speech); kept to minimize diff noise
+  /** Live Web Speech recognition instance — one fresh instance per take, never reused (see startWebSpeechRecognition). */
+  const recogRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const micAttemptRef = useRef(0);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const mediaChunksRef = useRef<BlobPart[]>([]);
   const recordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vadTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Silence timer for a Web Speech take (100ms interval; never the VAD's). */
+  const webSpeechTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Barge-in watcher: its own interval (never the VAD's) while the
+   *  voice is speaking. bargeArmingRef guards the async mic
+   *  acquisition so two overlapping starts cannot open two streams. */
+  const bargeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bargeArmingRef = useRef(false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   // --- Hands-free voice loop: mirrors + bookkeeping the async
   // recognition/playback callbacks read through refs, so a callback
@@ -197,7 +223,16 @@ export default function Interview() {
   const micPrimedRef = useRef(false);
   const notesOnceRef = useRef<Set<string>>(new Set());
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const recogSessionRef = useRef<{ auto: boolean; gotResult: boolean; suppressEnd: boolean } | null>(null);
+  /** The live Web Speech take, if any: auto = hands-free take,
+   *  gotResult = a final result arrived, suppressEnd = the take
+   *  was stopped programmatically (its onend must do nothing),
+   *  handled = onend already submitted or ran the empty path,
+   *  finalText = final transcript so far, lastResultAt = when
+   *  speech was last heard (drives the 1.4s silence stop). */
+  const recogSessionRef = useRef<{
+    auto: boolean; gotResult: boolean; suppressEnd: boolean; handled: boolean;
+    finalText: string; lastResultAt: number; startedAt: number;
+  } | null>(null);
   // --- Draft autosave (signed-in users only; guests never save) ---
   const draftIdRef = useRef<string | null>(null);
   const draftSavedSigRef = useRef('');
@@ -231,8 +266,8 @@ export default function Interview() {
   >(null);
   const [polishSkipped, setPolishSkipped] = useState(false);
 
-  const say = (from: 'bot' | 'user', text: string) =>
-    setMsgs((m) => [...m, { from, text }]);
+  const say = (from: 'bot' | 'user', text: string, speak?: string) =>
+    setMsgs((m) => [...m, { from, text, speak }]);
 
   // The signature prompt names the subject when the motion is for
   // someone else — their name is on the signature block, not the
@@ -379,7 +414,7 @@ export default function Interview() {
     const p = playerRef.current;
     if (!p) return;
     for (let i = spokenUptoRef.current; i < msgs.length; i++) {
-      if (msgs[i].from === 'bot') p.enqueue(msgs[i].text);
+      if (msgs[i].from === 'bot') p.enqueue(msgs[i].speak ?? msgs[i].text);
     }
     spokenUptoRef.current = msgs.length;
   }, [msgs, voiceOn]);
@@ -754,14 +789,20 @@ export default function Interview() {
       m: m.id, a: saved, s: subj, f: d.feeWaiverAdded,
     });
     say('bot', `Welcome back — I picked up your ${m.name} where you left off.`);
-    const q = buildQueue(m, new Set(subj !== null ? SUBJECT_SEEDED_KEYS : []));
+    // The queue is expanded for the children gate from the saved
+    // answers, so a resumed draft lands on the same question it
+    // would have asked live (gate, count, or per-child block).
+    const base = buildQueue(m, new Set(subj !== null ? SUBJECT_SEEDED_KEYS : []));
+    baseQueueRef.current = base;
+    const q = expandChildrenQueue(base, restored);
+    motionQueueRef.current = q;
     const firstOpen = q.findIndex((f) => !String(saved[f.key] ?? '').trim());
     if (firstOpen >= 0) {
       setQueue(q);
       setQTotal(q.length);
       setQIdx(firstOpen);
       setStage('fields');
-      say('bot', q[firstOpen].label + (q[firstOpen].hint ? ` ${q[firstOpen].hint}` : ''));
+      say('bot', q[firstOpen].label + (q[firstOpen].hint ? ` ${q[firstOpen].hint}` : ''), q[firstOpen].label);
       return;
     }
     // The whole queue is answered — land where the normal flow
@@ -860,7 +901,13 @@ export default function Interview() {
       ...(isSeeded ? SUBJECT_SEEDED_KEYS : []),
       ...caseSeededKeysRef.current,
     ]);
-    const q = buildQueue(m, skip);
+    const base = buildQueue(m, skip);
+    baseQueueRef.current = base;
+    // The children gate expands from the answers already known
+    // (a seeded subject never changes the gate; the gate question
+    // itself is inserted where the first gated field stood).
+    const q = expandChildrenQueue(base, answers);
+    motionQueueRef.current = q;
     setQueue(q);
     setQTotal(q.length);
     setQIdx(0);
@@ -870,7 +917,7 @@ export default function Interview() {
     } else {
       say('bot', `I will ask ${q.length} short questions — first a few about you and your case (used in the caption of every court document), then the ones specific to this motion.`);
     }
-    say('bot', q[0].label + (q[0].hint ? ` ${q[0].hint}` : ''));
+    say('bot', q[0].label + (q[0].hint ? ` ${q[0].hint}` : ''), q[0].label);
   }
 
   /** The fee-waiver pitch, worded for the subject — shared by the
@@ -910,19 +957,46 @@ export default function Interview() {
     const prev = queue[qIdx - 1];
     if (!prev) return;
     setQIdx(qIdx - 1);
-    say('bot', prev.label + (prev.hint ? ` ${prev.hint}` : ''));
+    say('bot', prev.label + (prev.hint ? ` ${prev.hint}` : ''), prev.label);
   }
 
   /** Advance the interview after an answer has been recorded
    *  into `next` — shared by typed answers and by the county
-   *  confirmation, which records county + state together. */
-  function proceedWith(next: Answers) {
-    const ni = qIdx + 1;
-    if (ni < queue.length) {
-      setQIdx(ni);
-      const nf = queue[ni];
-      say('bot', nf.label + (nf.hint ? ` ${nf.hint}` : ''));
-    } else if (stage === 'fields') {
+   *  confirmation, which records county + state together.
+   *  The children gate can reshape the queue (a Yes answer adds
+   *  the count question, a count answer expands the per-child
+   *  blocks, a No drops every gated field), so the effective queue
+   *  is rebuilt from the base queue + the new answers first, and
+   *  the next question is the one after the answered field in
+   *  that rebuilt queue. Fee-waiver fields have no gate and
+   *  advance in place, exactly as before. */
+  function proceedWith(next: Answers, answeredKey?: string) {
+    if (stage === 'fields' && motion) {
+      const expanded = expandChildrenQueue(baseQueueRef.current, next);
+      motionQueueRef.current = expanded;
+      setQueue(expanded);
+      setQTotal(expanded.length);
+      const key = answeredKey ?? queue[qIdx]?.key;
+      const answeredIdx = key ? expanded.findIndex((f) => f.key === key) : -1;
+      const ni = answeredIdx >= 0 ? answeredIdx + 1 : qIdx + 1;
+      if (ni < expanded.length) {
+        setQIdx(ni);
+        const nf = expanded[ni];
+        say('bot', nf.label + (nf.hint ? ` ${nf.hint}` : ''), nf.label);
+        return;
+      }
+    } else if (stage === 'feew-fields') {
+      const ni = qIdx + 1;
+      if (ni < queue.length) {
+        setQIdx(ni);
+        const nf = queue[ni];
+        say('bot', nf.label + (nf.hint ? ` ${nf.hint}` : ''), nf.label);
+        return;
+      }
+    } else if (stage !== 'fields') {
+      return;
+    }
+    if (stage === 'fields') {
       if (motion && motion.id === 'fee-waiver') {
         enterReview();
       } else {
@@ -947,8 +1021,24 @@ export default function Interview() {
       const p = statePartyName(value);
       if (p) next.opposingParty = p;
     }
+    // Children gate: a changed gate answer retires the answers it
+    // no longer covers, so a lowered count or a No never leaves
+    // stale per-child answers behind in the draft.
+    if (field.key === HAS_CHILDREN_KEY && readHasChildren(next) === 'no') {
+      delete next[CHILDREN_COUNT_KEY];
+      for (const k of Object.keys(next)) if (/^child\d+_/.test(k)) delete next[k];
+    }
+    if (field.key === CHILDREN_COUNT_KEY) {
+      const n = readChildrenCount(next);
+      if (n !== null) {
+        for (const k of Object.keys(next)) {
+          const mm = /^child(\d+)_/.exec(k);
+          if (mm && Number(mm[1]) > n) delete next[k];
+        }
+      }
+    }
     setAnswers(next);
-    proceedWith(next);
+    proceedWith(next, field.key);
   }
 
   // ---------- Voice layer ----------
@@ -966,11 +1056,19 @@ export default function Interview() {
       p.onActiveChange = (active) => {
         speakingRef.current = active;
         setSpeaking(active);
-        // While the bot speaks, stop any in-progress recording so we
-        // do not send the assistant's voice to ElevenLabs as an answer.
+        // While the bot speaks, stop any in-progress listening so we
+        // do not transcribe the assistant's voice as an answer.
         if (active) {
           stopRecognition(true);
           setSpeechStatus('Speaking…');
+          // Barge-in: watch the mic while the question plays — if
+          // the user starts answering mid-question, the watcher
+          // stops the voice and opens the mic on the same stream.
+          void startBargeInWatcher();
+        } else {
+          // Playback ended (natural drain or stop): the watcher
+          // stands down; the normal drain path opens the mic.
+          stopBargeInWatcher();
         }
       };
       p.onDrained = () => {
@@ -997,8 +1095,12 @@ export default function Interview() {
     return s === 'situation' || s === 'fields' || s === 'feew-fields';
   }
 
-  /** Stop MediaRecorder + release the mic stream and VAD. */
+  /** Stop any live listening — Web Speech recognition or the
+   *  MediaRecorder fallback — and release the mic stream and VAD. */
   function stopRecognition(_suppressEnd = true) {
+    // The barge-in watcher goes first: its analyser context is
+    // released here, and its mic tracks with the stream below.
+    stopBargeInWatcher();
     micAttemptRef.current += 1;
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
@@ -1011,6 +1113,22 @@ export default function Interview() {
     if (vadTimerRef.current) {
       clearInterval(vadTimerRef.current);
       vadTimerRef.current = null;
+    }
+    if (webSpeechTimerRef.current) {
+      clearInterval(webSpeechTimerRef.current);
+      webSpeechTimerRef.current = null;
+    }
+    // Web Speech: stop the live recognition (if any). The
+    // micAttemptRef bump above makes its late onend/onerror
+    // callbacks no-ops (the attempt token), and suppressEnd
+    // swallows onend entirely. Never call abort() here: stop()
+    // lets a pending final result flush, and the guards above
+    // keep it from submitting.
+    if (recogSessionRef.current) recogSessionRef.current.suppressEnd = true;
+    const recog = recogRef.current;
+    recogRef.current = null;
+    if (recog) {
+      try { recog.stop(); } catch { /* */ }
     }
     const rec = mediaRecorderRef.current;
     mediaRecorderRef.current = null;
@@ -1037,6 +1155,142 @@ export default function Interview() {
     setSpeechStatus(msg);
     setVoiceNote(msg);
     try { console.warn('[speech]', msg); } catch { /* */ }
+  }
+
+  /**
+   * Barge-in: while the voice is asking a question, watch the mic
+   * for the user starting to answer — then stop the voice at once
+   * and open the mic on the same stream, so the answer already in
+   * progress is captured and the next question follows as usual.
+   *
+   * Echo assumption: the mic is opened with echoCancellation +
+   * noiseSuppression (the same constraints as startRecognition),
+   * so the phone speaker's own voice is suppressed at the source.
+   * The watcher still requires sustained speech — RMS at or above
+   * the shared 0.02 threshold on 2 consecutive 100ms ticks
+   * (200ms) — and skips the first 300ms after it starts, so a
+   * tap, a cough, or the TTS onset transient before echo
+   * cancellation converges cannot trip it. The watcher only
+   * measures; it never records. It cannot be proven live without
+   * a real mic + speaker in the room: if echo cancellation proves
+   * weak on a device, the 2-tick sustain is the only guard, and
+   * the threshold may need raising for that device.
+   *
+   * Lifecycle: armed once per spoken clip from onActiveChange
+   * (a no-op while already watching); stops when playback ends
+   * (the normal onDrained → maybeAutoListen path takes over),
+   * when the stage leaves an answer stage, when voice is switched
+   * off, when a recording starts, or after it fires once. It never
+   * runs concurrently with an active recording — the VAD owns the
+   * mic then, on its own interval (vadTimerRef).
+   */
+  function stopBargeInWatcher() {
+    const wasWatching = bargeTimerRef.current !== null;
+    if (bargeTimerRef.current) {
+      clearInterval(bargeTimerRef.current);
+      bargeTimerRef.current = null;
+    }
+    bargeArmingRef.current = false;
+    // The analyser context goes only when the watcher was the one
+    // using it — never the VAD's context mid-recording. The mic
+    // tracks stay live: the recorder reuses this stream on
+    // barge-in, and stopRecognition releases them on every other
+    // teardown.
+    if (wasWatching && audioCtxRef.current) {
+      try { void audioCtxRef.current.close(); } catch { /* */ }
+      audioCtxRef.current = null;
+    }
+  }
+
+  async function startBargeInWatcher() {
+    if (!voiceOnRef.current) return;
+    if (!isAnswerStage(stageRef.current)) return;
+    if (bargeTimerRef.current || bargeArmingRef.current) return;
+    if (listeningRef.current || mediaRecorderRef.current) return;
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    bargeArmingRef.current = true;
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          channelCount: 1,
+        },
+      });
+    } catch {
+      // Mic unavailable mid-question: no barge-in, but the normal
+      // drain path still opens the mic (or reports the block).
+      bargeArmingRef.current = false;
+      return;
+    }
+    // Playback may have ended, voice may have been switched off,
+    // or a recording may have started while the mic was opening.
+    if (!voiceOnRef.current || !speakingRef.current || !isAnswerStage(stageRef.current) ||
+        listeningRef.current || mediaRecorderRef.current) {
+      stream.getTracks().forEach((track) => track.stop());
+      bargeArmingRef.current = false;
+      return;
+    }
+    mediaStreamRef.current = stream;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) throw new Error('no AudioContext');
+      const ctx = new AudioCtx();
+      audioCtxRef.current = ctx;
+      if (ctx.state === 'suspended') {
+        try { void ctx.resume(); } catch { /* */ }
+      }
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.5;
+      source.connect(analyser);
+      const data = new Uint8Array(analyser.fftSize);
+      // Same threshold as the recording VAD below.
+      const SPEECH_RMS = 0.02;
+      const startedAt = Date.now();
+      let loudTicks = 0;
+      bargeTimerRef.current = setInterval(() => {
+        if (!voiceOnRef.current || !speakingRef.current || !isAnswerStage(stageRef.current)) {
+          stopBargeInWatcher();
+          return;
+        }
+        if (listeningRef.current || mediaRecorderRef.current) {
+          stopBargeInWatcher();
+          return;
+        }
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) {
+          const v = (data[i] - 128) / 128;
+          sum += v * v;
+        }
+        const rms = Math.sqrt(sum / data.length);
+        if (rms >= SPEECH_RMS) loudTicks += 1;
+        else loudTicks = 0;
+        if (loudTicks >= 2 && Date.now() - startedAt >= 300) {
+          // Sustained speech: the user is answering mid-question.
+          // Stop the watcher (timer + analyser context only), halt
+          // the voice at once — stop() clears the queue and fires
+          // onActiveChange(false) but never onDrained, so nothing
+          // else will open the mic — then open it here, on the
+          // same live stream, to catch the answer in progress.
+          // The user just proved they are present, so the paused
+          // auto-listen state (if any) is cleared too.
+          stopBargeInWatcher();
+          playerRef.current?.stop();
+          listenPausedRef.current = false;
+          emptyCyclesRef.current = 0;
+          void fnRef.current.startRecognition(true);
+        }
+      }, 100);
+      bargeArmingRef.current = false;
+    } catch {
+      stream.getTracks().forEach((track) => track.stop());
+      if (mediaStreamRef.current === stream) mediaStreamRef.current = null;
+      stopBargeInWatcher();
+    }
   }
 
   async function transcribeBlob(blob: Blob, attempt: number): Promise<string | null> {
@@ -1073,10 +1327,40 @@ export default function Interview() {
     }
   }
 
+  /** The browser Web Speech recognizer constructor, or null when
+   *  this browser has none (Firefox, older Safari). Chrome, Edge
+   *  and modern Safari expose it (webkit-prefixed in some). */
+  function getSpeechRecognition(): any | null {
+    if (typeof window === 'undefined') return null;
+    const w = window as any;
+    return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+  }
+
+  /** Empty-take handling for the Web Speech path: auto mode counts
+   *  quiet cycles and pauses after 3 (same message and timing as
+   *  the Scribe path); manual mode reports its own message at the
+   *  call site, so this is a no-op there. */
+  function noteEmptyTake(auto: boolean) {
+    if (!auto) return;
+    if (!voiceOnRef.current || autoBlockedRef.current) return;
+    emptyCyclesRef.current += 1;
+    if (emptyCyclesRef.current >= 3) {
+      listenPausedRef.current = true;
+      setSpeechStatus("Say your answer, or tap the mic when you're ready");
+      return;
+    }
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    retryTimerRef.current = setTimeout(() => {
+      retryTimerRef.current = null;
+      fnRef.current.maybeAutoListen();
+    }, 700);
+  }
+
   /**
-   * Record from the mic with MediaRecorder, then transcribe via
-   * ElevenLabs Scribe (POST /api/stt). Replaces browser Web Speech,
-   * which was aborting on this deployment.
+   * Open the mic for one answer. Primary path is the browser Web
+   * Speech API (client-side transcription); when the browser has
+   * no SpeechRecognition, the MediaRecorder + server Scribe path
+   * (startScribeRecognition) runs instead.
    *
    * auto=true: started after TTS (hands-free). Stops on mic tap,
    * max duration, or when stopRecognition runs (next TTS / end call).
@@ -1086,6 +1370,233 @@ export default function Interview() {
     if (auto && (autoBlockedRef.current || listenPausedRef.current)) return false;
     if (auto && speakingRef.current) return false;
     if (typeof window === 'undefined') return false;
+    const SR = getSpeechRecognition();
+    if (SR) return startWebSpeechRecognition(auto, SR);
+    return startScribeRecognition(auto);
+  }
+
+  /**
+   * Client-side speech-to-text via the browser Web Speech API
+   * (Chrome / Edge / modern Safari). No audio is sent to our
+   * server or to ElevenLabs for transcription — the browser
+   * vendor's recognizer does it.
+   *
+   * The old Web Speech implementation aborted on this deployment.
+   * This one does not repeat it:
+   * - A FRESH SpeechRecognition instance is created for every
+   *   take and never reused: reusing an instance after stop()
+   *   is what produced the aborts.
+   * - start() is never called while one is active: the
+   *   dispatcher returns early while listeningRef is set.
+   * - stopRecognition() stops the live instance and bumps
+   *   micAttemptRef, so the instance's late onend/onerror
+   *   callbacks are no-ops (the attempt token), and the
+   *   session's suppressEnd flag swallows onend entirely.
+   * - onerror 'aborted' is treated as a clean stop: no message,
+   *   no retry, no loop — an abort is expected whenever
+   *   recognition is stopped programmatically.
+   * - The mic stream the barge-in watcher holds is stopped, not
+   *   reused: Web Speech captures its own audio, and two live
+   *   mic captures on one phone can starve each other.
+   *
+   * Silence stop mirrors the Scribe path's VAD: ~1.4s of quiet
+   * after speech ends the take, 12s with no speech at all ends
+   * it empty, 30s caps a take. The browser's own end-of-speech
+   * also ends the take through onend.
+   */
+  async function startWebSpeechRecognition(auto: boolean, SR: any): Promise<boolean> {
+    // Barge-in handoff: the watcher already holds a live mic
+    // stream, opened while the question played. Web Speech does
+    // not need it — it captures its own audio — so stop its
+    // tracks instead of reusing them (the Scribe path reuses
+    // them; here a second live capture could starve the
+    // recognizer on a phone). stopRecognition would also stop
+    // the stream's tracks, so it is skipped on this path — only
+    // the watcher timer/context go (already stopped by the fire
+    // handler; this is a no-op guard).
+    const watcherStream =
+      mediaStreamRef.current && !mediaRecorderRef.current &&
+      mediaStreamRef.current.getTracks().some((t) => t.readyState === 'live')
+        ? mediaStreamRef.current
+        : null;
+    if (watcherStream) {
+      stopBargeInWatcher();
+      for (const t of watcherStream.getTracks()) {
+        try { t.stop(); } catch { /* */ }
+      }
+      mediaStreamRef.current = null;
+    } else {
+      stopRecognition(true);
+    }
+    const attempt = micAttemptRef.current;
+
+    let recog: any;
+    try {
+      recog = new SR();
+    } catch {
+      // Constructor unavailable after all — fall back silently
+      // to the server path; no instance is running.
+      return startScribeRecognition(auto);
+    }
+    recog.lang = 'en-US';
+    recog.interimResults = true;
+    recog.continuous = true;
+    recog.maxAlternatives = 1;
+
+    const session = {
+      auto, gotResult: false, suppressEnd: false, handled: false,
+      finalText: '', lastResultAt: 0, startedAt: Date.now(),
+    };
+    recogSessionRef.current = session;
+    recogRef.current = recog;
+
+    // The one submit point, through onend only, so a transcript
+    // is never submitted twice (timer stop + onend both firing).
+    const finishTake = () => {
+      if (session.handled) return;
+      session.handled = true;
+      setListening(false);
+      listeningRef.current = false;
+      const text = session.finalText.trim();
+      if (text) {
+        emptyCyclesRef.current = 0;
+        listenPausedRef.current = false;
+        setSpeechStatus(null);
+        fnRef.current.submitInput(text);
+      } else if (session.auto) {
+        noteEmptyTake(true);
+      } else {
+        reportSpeech('No speech detected. Tap the mic and try again, or type your answer.');
+      }
+    };
+
+    recog.onresult = (e: any) => {
+      if (attempt !== micAttemptRef.current) return;
+      let interim = '';
+      try {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const r = e.results[i];
+          if (!r || !r[0]) continue;
+          if (r.isFinal) {
+            const piece = String(r[0].transcript || '');
+            if (piece) {
+              if (session.finalText && !session.finalText.endsWith(' ') && !piece.startsWith(' ')) session.finalText += ' ';
+              session.finalText += piece;
+            }
+            session.gotResult = true;
+          } else {
+            interim += r[0].transcript;
+          }
+        }
+      } catch { /* */ }
+      if (session.finalText || interim) session.lastResultAt = Date.now();
+      if (interim.trim()) {
+        setSpeechStatus(`Hearing you… ${interim.trim().slice(0, 80)}`);
+      } else if (session.gotResult) {
+        setSpeechStatus('Hearing you…');
+      }
+    };
+
+    recog.onerror = (e: any) => {
+      if (attempt !== micAttemptRef.current) return;
+      const err = String(e?.error || '');
+      if (err === 'aborted') return; // programmatic stop — clean, silent
+      if (err === 'no-speech') return; // onend follows and runs the empty path
+      if (err === 'not-allowed' || err === 'service-not-allowed') {
+        session.handled = true;
+        autoBlockedRef.current = true;
+        reportSpeech('Microphone access was blocked — typing works just the same.');
+        return;
+      }
+      if (err === 'audio-capture') {
+        session.handled = true;
+        autoBlockedRef.current = true;
+        reportSpeech('No microphone was found — typing works just the same.');
+        return;
+      }
+      // 'network', 'language-not-supported', and anything else:
+      // the take is dead. Count it as an empty take in auto mode
+      // (retry, pause at 3) like a failed Scribe take.
+      session.handled = true;
+      if (session.auto) {
+        noteEmptyTake(true);
+      } else {
+        reportSpeech('Transcription failed. Check your connection, or type your answer.');
+      }
+    };
+
+    recog.onend = () => {
+      if (webSpeechTimerRef.current) {
+        clearInterval(webSpeechTimerRef.current);
+        webSpeechTimerRef.current = null;
+      }
+      if (recogRef.current === recog) recogRef.current = null;
+      if (attempt !== micAttemptRef.current) return;
+      if (session.suppressEnd) return;
+      finishTake();
+    };
+
+    // Silence stop: the same timing as the Scribe path's VAD.
+    const SILENCE_MS = 1400;         // quiet this long after speech → stop
+    const MAX_INITIAL_WAIT_MS = 12000; // no speech at all → stop & empty
+    const MAX_TAKE_MS = 30000;       // safety cap
+    const clearSilenceTimer = () => {
+      if (webSpeechTimerRef.current) {
+        clearInterval(webSpeechTimerRef.current);
+        webSpeechTimerRef.current = null;
+      }
+    };
+    webSpeechTimerRef.current = setInterval(() => {
+      if (attempt !== micAttemptRef.current) {
+        clearSilenceTimer();
+        return;
+      }
+      const now = Date.now();
+      if (session.finalText && now - session.lastResultAt >= SILENCE_MS) {
+        clearSilenceTimer();
+        try { recog.stop(); } catch { /* */ }
+        return;
+      }
+      if (!session.finalText && now - session.startedAt >= MAX_INITIAL_WAIT_MS) {
+        clearSilenceTimer();
+        try { recog.stop(); } catch { /* */ }
+        return;
+      }
+      if (now - session.startedAt >= MAX_TAKE_MS) {
+        clearSilenceTimer();
+        try { recog.stop(); } catch { /* */ }
+      }
+    }, 100);
+
+    try {
+      recog.start();
+    } catch {
+      // start() threw (should not happen with the guards above):
+      // nothing is running — fall back to the server path.
+      clearSilenceTimer();
+      recogRef.current = null;
+      recogSessionRef.current = null;
+      return startScribeRecognition(auto);
+    }
+
+    setListening(true);
+    listeningRef.current = true;
+    autoBlockedRef.current = false;
+    setSpeechStatus(auto ? 'Listening for your answer…' : 'Listening…');
+    return true;
+  }
+
+  /**
+   * Fallback path — used only when the browser has no Web Speech
+   * API (Firefox, older Safari). Records with MediaRecorder and
+   * transcribes via ElevenLabs Scribe (POST /api/stt). Unchanged
+   * behavior: same auto-listen, empty-cycle, and mic-button flow
+   * as before the switch.
+   *
+   * auto=true: started after TTS (hands-free). Stops on mic tap,
+   * max duration, or when stopRecognition runs (next TTS / end call).
+   */
+  async function startScribeRecognition(auto: boolean): Promise<boolean> {
     if (!navigator.mediaDevices?.getUserMedia) {
       reportSpeech('This browser cannot access the microphone — typing works just the same.');
       autoBlockedRef.current = true;
@@ -1097,30 +1608,53 @@ export default function Interview() {
       return false;
     }
 
-    stopRecognition(true);
+    // Barge-in handoff: the watcher already holds a live mic
+    // stream, opened while the question played. Reuse it instead
+    // of re-acquiring, so the answer the user is already giving is
+    // not clipped at its start. stopRecognition would stop the
+    // stream's tracks, so it is skipped on this path — only the
+    // watcher timer/context go (already stopped by the fire
+    // handler; this is a no-op guard). A live stream in
+    // mediaStreamRef with no recorder can only be the watcher's:
+    // every finished take clears the ref in onstop, and every
+    // other teardown goes through stopRecognition.
+    const watcherStream =
+      mediaStreamRef.current && !mediaRecorderRef.current &&
+      mediaStreamRef.current.getTracks().some((t) => t.readyState === 'live')
+        ? mediaStreamRef.current
+        : null;
+    if (watcherStream) {
+      stopBargeInWatcher();
+    } else {
+      stopRecognition(true);
+    }
     const attempt = micAttemptRef.current;
 
     let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          channelCount: 1,
-        },
-      });
-    } catch (err: any) {
-      if (attempt !== micAttemptRef.current) return false;
-      const name = String(err?.name || '');
-      autoBlockedRef.current = true;
-      if (name.includes('NotAllowed') || name.includes('PermissionDenied')) {
-        reportSpeech('Microphone access was blocked — typing works just the same.');
-      } else if (name.includes('NotFound')) {
-        reportSpeech('No microphone was found — typing works just the same.');
-      } else {
-        reportSpeech('Could not open the microphone — typing works just the same.');
+    if (watcherStream) {
+      stream = watcherStream;
+    } else {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            channelCount: 1,
+          },
+        });
+      } catch (err: any) {
+        if (attempt !== micAttemptRef.current) return false;
+        const name = String(err?.name || '');
+        autoBlockedRef.current = true;
+        if (name.includes('NotAllowed') || name.includes('PermissionDenied')) {
+          reportSpeech('Microphone access was blocked — typing works just the same.');
+        } else if (name.includes('NotFound')) {
+          reportSpeech('No microphone was found — typing works just the same.');
+        } else {
+          reportSpeech('Could not open the microphone — typing works just the same.');
+        }
+        return false;
       }
-      return false;
     }
 
     if (attempt !== micAttemptRef.current) {
@@ -1364,10 +1898,17 @@ export default function Interview() {
     setSpeechStatus(null);
   }
 
-  /** Mic button: start recording, or stop + transcribe if already listening. */
+  /** Mic button: start listening, or finish the take if already listening. */
   function toggleMic() {
     if (listeningRef.current || listening) {
-      // Finish this take and send to ElevenLabs.
+      // Web Speech take: stop it; onend submits the final
+      // transcript (or runs the empty path).
+      const recog = recogRef.current;
+      if (recog) {
+        try { recog.stop(); } catch { /* */ }
+        return;
+      }
+      // Scribe take: finish the recording and send it to /api/stt.
       if (recordTimerRef.current) {
         clearTimeout(recordTimerRef.current);
         recordTimerRef.current = null;
@@ -1445,7 +1986,7 @@ export default function Interview() {
     say('user', 'Yes');
     const next = { ...answers, county: pc.county, state: pc.state };
     setAnswers(next);
-    proceedWith(next);
+    proceedWith(next, 'county');
   }
 
   function declineCounty() {
@@ -1484,8 +2025,10 @@ export default function Interview() {
   }
 
   function checkoutPacket() {
+    // Per-child answers compose back into the list keys the PDF
+    // expects; the gate keys never leave the browser.
     return motion ? {
-      motionId: motion.id, answers: withStateParty(motion, answers), signature, feeWaiverAdded,
+      motionId: motion.id, answers: composeChildrenAnswers(withStateParty(motion, answers)), signature, feeWaiverAdded,
       subject, draftId: draftIdRef.current, caseId: caseIdRef.current,
     } : null;
   }
@@ -1516,14 +2059,19 @@ export default function Interview() {
       if (data.devFree || data.member) return await generatePdf(null);
       if (data.couponFree) return await generatePdf(null, coupon.trim());
       if (data.error === 'membership_required') setMember(false);
-      if (data.url) {
+      if (data.clientSecret) {
         if (member) {
-          // Membership could have expired since this page loaded. Do not redirect to a paid checkout without the buyer choosing it.
+          // Membership could have expired since this page loaded. Do not start a paid checkout without the buyer choosing it.
           setMember(false);
           setPayError('Your membership is not active. Choose the $5 one-time purchase or renew your membership.');
           return;
         }
-        window.location.href = data.url;
+        setEmbeddedClientSecret(data.clientSecret);
+        setEmbeddedSessionId(data.sessionId || '');
+        return;
+      }
+      if (data.url) {
+        setPayError('Checkout could not load on this page. No charge was made. Please try again.');
         return;
       }
       setPayError(data.message || 'Payments are not available right now.');
@@ -1539,7 +2087,7 @@ export default function Interview() {
       const res = await fetch('/api/pdf', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ motionId: motion.id, answers: withStateParty(motion, answers), signature, feeWaiverAdded, sessionId, coupon: couponCode || undefined, forWhom: subject, draftId: draftIdRef.current || undefined, caseId: caseIdRef.current || undefined }),
+        body: JSON.stringify({ motionId: motion.id, answers: composeChildrenAnswers(withStateParty(motion, answers)), signature, feeWaiverAdded, sessionId, coupon: couponCode || undefined, forWhom: subject, draftId: draftIdRef.current || undefined, caseId: caseIdRef.current || undefined }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -1724,9 +2272,13 @@ export default function Interview() {
   const reviewPairs = (() => {
     const seen = new Set<string>();
     const out: { key: string; label: string; value: string }[] = [];
+    // The motion half comes from the expanded fields queue, not the
+    // raw motion fields: that is where the gate questions and the
+    // per-child questions live. Seeded subject fields are not in
+    // the queue, so the shared fields are still listed first.
     const all = [
       ...SHARED_FIELDS,
-      ...(motion?.fields || []),
+      ...(motionQueueRef.current.length ? motionQueueRef.current : (motion?.fields || [])),
       ...(feeWaiverAdded ? IFP_FIELDS : []),
     ];
     for (const f of all) {
@@ -2617,13 +3169,30 @@ export default function Interview() {
                   : member
                     ? 'Your PDF and filing instructions are included with your membership.'
                     : coupon.trim()
-                    ? 'Your document will be generated with the coupon applied.'
+                    ? 'Your document will be generated with the promo code applied.'
                     : 'Download your motion PDF with filing instructions for $5, or get it included with membership.'}
               </p>
               {payError && <p className="error">{payError}</p>}
-              {!restoredSession && !member && (
+              {embeddedClientSecret && (
+                <>
+                  <EmbeddedCheckoutBox
+                    clientSecret={embeddedClientSecret}
+                    onComplete={() => {
+                      const sessionId = embeddedSessionId;
+                      setEmbeddedClientSecret('');
+                      setEmbeddedSessionId('');
+                      void generatePdf(sessionId || null);
+                    }}
+                    onError={setPayError}
+                  />
+                  <button className="btn" disabled={checkoutBusy} onClick={() => { setEmbeddedClientSecret(''); setEmbeddedSessionId(''); }}>
+                    Cancel checkout
+                  </button>
+                </>
+              )}
+              {!restoredSession && !member && !embeddedClientSecret && (
                 <div className="field">
-                  <label htmlFor="coupon-code">Coupon code (optional)</label>
+                  <label htmlFor="coupon-code">Promo code (optional)</label>
                   <input
                     id="coupon-code"
                     value={coupon}
@@ -2638,10 +3207,10 @@ export default function Interview() {
                 <button className="btn primary big" onClick={() => generatePdf(restoredSession)}>Download my document</button>
               ) : (
                 <div className="choices">
-                  <button className="btn primary big" disabled={checkoutBusy} onClick={startPayment}>
-                    {checkoutBusy ? 'Please wait…' : member ? 'Download my included PDF' : coupon.trim() ? 'Apply coupon and download' : 'Get my PDF for $5'}
+                  <button className="btn primary big" disabled={checkoutBusy || Boolean(embeddedClientSecret)} onClick={startPayment}>
+                    {checkoutBusy ? 'Please wait…' : member ? 'Download my included PDF' : coupon.trim() ? 'Apply promo code and download' : 'Get my PDF for $5'}
                   </button>
-                  {!member && <button className="btn" disabled={checkoutBusy} onClick={openMembership}>See subscription plans</button>}
+                  {!member && <button className="btn" disabled={checkoutBusy || Boolean(embeddedClientSecret)} onClick={openMembership}>See subscription plans</button>}
                 </div>
               )}
               <p className="fineprint cardfoot">
